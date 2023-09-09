@@ -17,7 +17,7 @@ func NewTracerProvider() (*otlptrace.Exporter, error) {
 	return nil, nil
 }
 
-func initTracerProvider(ctx context.Context) error {
+func Init(ctx context.Context) error {
 
 	res, err := resource.New(ctx,
 		resource.WithAttributes(

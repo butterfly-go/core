@@ -7,3 +7,7 @@ var (
 func Service() string {
 	return service
 }
+
+func SetService(srv string) {
+	service = srv
+}
