@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -23,6 +24,12 @@ func NewTracerProvider(ctx context.Context) (*otlptrace.Exporter, error) {
 	default:
 		return newGRPCExporter(ctx)
 	}
+}
+
+func newHTTPTraceExporter(ctx context.Context) (*otlptrace.Exporter, error) {
+	endpoint := arg.String("tracing-endpoint")
+	traceExporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint))
+	return traceExporter, err
 }
 
 func newGRPCExporter(ctx context.Context) (*otlptrace.Exporter, error) {
