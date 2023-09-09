@@ -56,6 +56,9 @@ func Init(ctx context.Context) error {
 
 	// Set up a trace exporter
 	traceExporter, err := NewTracerProvider(ctx)
+	if err != nil {
+		return err
+	}
 
 	// Register the trace exporter with a TracerProvider, using a batch
 	// span processor to aggregate spans before export.
