@@ -11,3 +11,8 @@ func String(key string) string {
 	key = "BUTTERFLY_" + key
 	return os.Getenv(key)
 }
+
+func Bool(key string) bool {
+	v := String(key)
+	return v == "true" || v == "1"
+}
