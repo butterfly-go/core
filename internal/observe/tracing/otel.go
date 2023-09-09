@@ -3,6 +3,7 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"butterfly.orx.me/core/internal/arg"
 	"butterfly.orx.me/core/internal/runtime"
@@ -57,6 +58,7 @@ func Init(ctx context.Context) error {
 	// Set up a trace exporter
 	traceExporter, err := NewTracerProvider(ctx)
 	if err != nil {
+		slog.Error("failed to create trace exporter", "error", err.Error())
 		return err
 	}
 
