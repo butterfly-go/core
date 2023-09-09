@@ -52,6 +52,7 @@ func Init(ctx context.Context) error {
 		),
 	)
 	if err != nil {
+		slog.Error("failed to create resource", "error", err.Error())
 		return fmt.Errorf("failed to create resource: %w", err)
 	}
 
