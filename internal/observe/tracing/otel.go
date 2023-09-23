@@ -22,6 +22,8 @@ import (
 func NewTracerProvider(ctx context.Context) (*otlptrace.Exporter, error) {
 	provider := arg.String("tracing-provider")
 	switch provider {
+	case "http":
+		return newHTTPTraceExporter(ctx)
 	default:
 		return newGRPCExporter(ctx)
 	}
@@ -29,12 +31,14 @@ func NewTracerProvider(ctx context.Context) (*otlptrace.Exporter, error) {
 
 func newHTTPTraceExporter(ctx context.Context) (*otlptrace.Exporter, error) {
 	endpoint := arg.String("tracing-endpoint")
+	slog.Info("tracing http endpoint", "endpoint", endpoint)
 	traceExporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint))
 	return traceExporter, err
 }
 
 func newGRPCExporter(ctx context.Context) (*otlptrace.Exporter, error) {
 	endpoint := arg.String("tracing-endpoint")
+	slog.Info("tracing grpc endpoint", "endpoint", endpoint)
 	conn, err := grpc.Dial(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
