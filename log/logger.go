@@ -7,6 +7,6 @@ import (
 
 type loggerContextKey struct{}
 
-func FromContext(ctx context.Context) *slog.Logger {
+func FromContext(context.Context) *slog.Logger {
 	return slog.Default()
 }
