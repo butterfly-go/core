@@ -30,14 +30,14 @@ func New(config *Config) *App {
 func (a *App) Run() {
 	ctx := context.Background()
 	runtime.SetService(a.config.Service)
-	tracing.Init(ctx)
+	_ = tracing.Init(ctx)
 	metric.Init()
 
 	if a.config.GRPCRegister != nil {
 		go a.GRPCServer()
 	}
 
-	a.HTTPServer()
+	_ = a.HTTPServer()
 }
 
 func (a *App) HTTPServer() error {
