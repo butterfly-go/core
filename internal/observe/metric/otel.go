@@ -17,7 +17,7 @@ var (
 	registry = prom.NewRegistry()
 )
 
-func PrometheusRegister() prom.Registerer {
+func PrometheusRegister() *prom.Registry {
 	return registry
 }
 

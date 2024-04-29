@@ -5,6 +5,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func PrometheusRegistry() prometheus.Registerer {
+func PrometheusRegistry() *prometheus.Registry {
 	return metric.PrometheusRegister()
 }
