@@ -17,7 +17,7 @@ var (
 	registry = prom.NewRegistry()
 )
 
-func PrometheusRegister() prom.Registerer {
+func PrometheusRegister() *prom.Registry {
 	return registry
 }
 
@@ -45,11 +45,9 @@ func Init() error {
 
 func serveMetrics() {
 	log.Printf("serving metrics at localhost:2223/metrics")
-	http.Handle("/metrics", promhttp.HandlerFor(
+	http.Handle("/metrics", promhttp.InstrumentMetricHandler(
 		registry,
-		promhttp.HandlerOpts{
-			EnableOpenMetrics: true,
-		}),
+		promhttp.HandlerFor(registry, promhttp.HandlerOpts{})),
 	)
 	err := http.ListenAndServe(":2223", nil) //nolint:gosec // Ignoring G114: Use of net/http serve function that has no support for setting timeouts.
 	if err != nil {
