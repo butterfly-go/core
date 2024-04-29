@@ -8,11 +8,13 @@ import (
 	"butterfly.orx.me/core/internal/runtime"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"google.golang.org/grpc"
 )
 
 type Config struct {
-	Service string
-	Router  func(*gin.Engine)
+	Service      string
+	Router       func(*gin.Engine)
+	GRPCRegister func(*grpc.Server)
 }
 
 type App struct {
@@ -28,9 +30,14 @@ func New(config *Config) *App {
 func (a *App) Run() {
 	ctx := context.Background()
 	runtime.SetService(a.config.Service)
-	tracing.Init(ctx)
+	_ = tracing.Init(ctx)
 	metric.Init()
-	a.HTTPServer()
+
+	if a.config.GRPCRegister != nil {
+		go a.GRPCServer()
+	}
+
+	_ = a.HTTPServer()
 }
 
 func (a *App) HTTPServer() error {
@@ -40,4 +47,9 @@ func (a *App) HTTPServer() error {
 		a.config.Router(r)
 	}
 	return r.Run()
+}
+
+func (a *App) GRPCServer() {
+	server := grpc.NewServer()
+	a.config.GRPCRegister(server)
 }

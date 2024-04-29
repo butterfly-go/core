@@ -39,6 +39,7 @@ func TestRouter(t *testing.T) {
 		t.Fatal(err)
 		return
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatal("status code is not 200")
 	}

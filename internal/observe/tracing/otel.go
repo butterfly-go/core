@@ -3,6 +3,7 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"butterfly.orx.me/core/internal/arg"
 	"butterfly.orx.me/core/internal/runtime"
@@ -21,6 +22,8 @@ import (
 func NewTracerProvider(ctx context.Context) (*otlptrace.Exporter, error) {
 	provider := arg.String("tracing-provider")
 	switch provider {
+	case "http":
+		return newHTTPTraceExporter(ctx)
 	default:
 		return newGRPCExporter(ctx)
 	}
@@ -28,12 +31,14 @@ func NewTracerProvider(ctx context.Context) (*otlptrace.Exporter, error) {
 
 func newHTTPTraceExporter(ctx context.Context) (*otlptrace.Exporter, error) {
 	endpoint := arg.String("tracing-endpoint")
+	slog.Info("tracing http endpoint", "endpoint", endpoint)
 	traceExporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint))
 	return traceExporter, err
 }
 
 func newGRPCExporter(ctx context.Context) (*otlptrace.Exporter, error) {
 	endpoint := arg.String("tracing-endpoint")
+	slog.Info("tracing grpc endpoint", "endpoint", endpoint)
 	conn, err := grpc.Dial(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
@@ -43,7 +48,6 @@ func newGRPCExporter(ctx context.Context) (*otlptrace.Exporter, error) {
 }
 
 func Init(ctx context.Context) error {
-
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			// the service name used to display traces in backends
@@ -51,11 +55,16 @@ func Init(ctx context.Context) error {
 		),
 	)
 	if err != nil {
+		slog.Error("failed to create resource", "error", err.Error())
 		return fmt.Errorf("failed to create resource: %w", err)
 	}
 
 	// Set up a trace exporter
 	traceExporter, err := NewTracerProvider(ctx)
+	if err != nil {
+		slog.Error("failed to create trace exporter", "error", err.Error())
+		return err
+	}
 
 	// Register the trace exporter with a TracerProvider, using a batch
 	// span processor to aggregate spans before export.
