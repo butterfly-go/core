@@ -1,26 +1,59 @@
 package metric
 
 import (
+	"fmt"
 	"log"
+	"net/http"
 
-	"butterfly.orx.me/core/internal/runtime"
+	prom "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/prometheus"
-	otelmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/metric"
 )
 
 var (
-	meter otelmetric.Meter
+	registry = prom.NewRegistry()
 )
 
-func Init() {
+func PrometheusRegister() prom.Registerer {
+	return registry
+}
+
+func Init() error {
 	// The exporter embeds a default OpenTelemetry Reader and
 	// implements prometheus.Collector, allowing it to be used as
 	// both a Reader and Collector.
-	exporter, err := prometheus.New()
+	exporter, err := prometheus.New(prometheus.WithRegisterer(registry))
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// Add go runtime metrics and process collectors.
+	registry.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		// requestDurations,
+	)
+
 	provider := metric.NewMeterProvider(metric.WithReader(exporter))
-	meter = provider.Meter(runtime.Service())
+	otel.SetMeterProvider(provider)
+	go serveMetrics()
+	return nil
+}
+
+func serveMetrics() {
+	log.Printf("serving metrics at localhost:2223/metrics")
+	http.Handle("/metrics", promhttp.HandlerFor(
+		registry,
+		promhttp.HandlerOpts{
+			EnableOpenMetrics: true,
+		}),
+	)
+	err := http.ListenAndServe(":2223", nil) //nolint:gosec // Ignoring G114: Use of net/http serve function that has no support for setting timeouts.
+	if err != nil {
+		fmt.Printf("error serving http: %v", err)
+		return
+	}
 }
