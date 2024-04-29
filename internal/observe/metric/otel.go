@@ -3,17 +3,12 @@ package metric
 import (
 	"log"
 
-	"butterfly.orx.me/core/internal/runtime"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/prometheus"
-	otelmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/metric"
 )
 
-var (
-	meter otelmetric.Meter
-)
-
-func Init() {
+func Init() error {
 	// The exporter embeds a default OpenTelemetry Reader and
 	// implements prometheus.Collector, allowing it to be used as
 	// both a Reader and Collector.
@@ -22,5 +17,7 @@ func Init() {
 		log.Fatal(err)
 	}
 	provider := metric.NewMeterProvider(metric.WithReader(exporter))
-	meter = provider.Meter(runtime.Service())
+
+	otel.SetMeterProvider(provider)
+	return nil
 }
