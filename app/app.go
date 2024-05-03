@@ -31,7 +31,7 @@ func (a *App) Run() {
 	ctx := context.Background()
 	runtime.SetService(a.config.Service)
 	_ = tracing.Init(ctx)
-	metric.Init()
+	_ = metric.Init()
 
 	if a.config.GRPCRegister != nil {
 		go a.GRPCServer()
