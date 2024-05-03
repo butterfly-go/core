@@ -8,6 +8,10 @@ import (
 
 type DB = gorm.DB
 
+type Session = gorm.Session
+
+type Tx = gorm.Tx
+
 // NewDB
 // MySQL only for now
 func NewDB(dsn string) (*DB, error) {
