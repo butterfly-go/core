@@ -46,8 +46,6 @@ linters:
   # - wsl
 
 linters-settings:
-  govet:
-    check-shadowing: true
   whitespace:
     multi-func: true
   lll:
