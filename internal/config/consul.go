@@ -3,6 +3,8 @@ package config
 import (
 	"context"
 
+	"butterfly.orx.me/core/internal/arg"
+	"butterfly.orx.me/core/internal/log"
 	capi "github.com/hashicorp/consul/api"
 )
 
@@ -13,8 +15,12 @@ type ConsulConfig struct {
 
 func NewConsulConfig() (*ConsulConfig, error) {
 	// Get a new client
+	logger := log.CoreLogger("config.consul")
+	addr := arg.String("config.consul.address")
+	logger.Info("create new consul config",
+		"addr", addr)
 	client, err := capi.NewClient(&capi.Config{
-		//
+		Address: addr,
 	})
 	if err != nil {
 		return nil, err
