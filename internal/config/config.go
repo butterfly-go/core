@@ -10,6 +10,10 @@ type Config interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 }
 
+type ConfigObject interface {
+	Print()
+}
+
 func Init() error {
 	c, err := NewConsulConfig()
 	if err != nil {

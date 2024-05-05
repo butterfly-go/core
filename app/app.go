@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	"butterfly.orx.me/core/internal/config"
 	"butterfly.orx.me/core/internal/observe/metric"
 	"butterfly.orx.me/core/internal/observe/tracing"
 	"butterfly.orx.me/core/internal/runtime"
@@ -13,6 +14,7 @@ import (
 
 type Config struct {
 	Service      string
+	Config       config.ConfigObject
 	Router       func(*gin.Engine)
 	GRPCRegister func(*grpc.Server)
 }
