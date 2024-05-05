@@ -37,12 +37,18 @@ func New(config *Config) *App {
 }
 
 func (a *App) Run() {
-	ctx := context.Background()
 	runtime.SetService(a.config.Service)
 
-	_ = a.InitAppConfig()
-	_ = tracing.Init(ctx)
-	_ = metric.Init()
+	appendFn(
+		NewFn(a.InitAppConfig),
+		NewFn(metric.Init),
+		NewFn(tracing.Init))
+
+	// do func init
+	err := do()
+	if err != nil {
+		panic(err)
+	}
 
 	if a.config.GRPCRegister != nil {
 		go a.GRPCServer()

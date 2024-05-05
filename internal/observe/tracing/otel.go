@@ -47,7 +47,8 @@ func newGRPCExporter(ctx context.Context) (*otlptrace.Exporter, error) {
 	return traceExporter, err
 }
 
-func Init(ctx context.Context) error {
+func Init() error {
+	ctx := context.Background()
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			// the service name used to display traces in backends

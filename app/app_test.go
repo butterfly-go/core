@@ -15,8 +15,14 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+type testConfig struct {
+}
+
+func (t *testConfig) Print() {}
+
 func setup() {
 	app := New(&Config{
+		Config:  new(testConfig),
 		Service: "test",
 		Router: func(r *gin.Engine) {
 			r.GET("/ping", func(c *gin.Context) {
