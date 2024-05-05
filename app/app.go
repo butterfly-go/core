@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"google.golang.org/grpc"
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
@@ -17,6 +18,11 @@ type Config struct {
 	Config       config.ConfigObject
 	Router       func(*gin.Engine)
 	GRPCRegister func(*grpc.Server)
+}
+
+func (c Config) ConfigKey() string {
+	// @todo
+	return c.Service
 }
 
 type App struct {
@@ -32,6 +38,8 @@ func New(config *Config) *App {
 func (a *App) Run() {
 	ctx := context.Background()
 	runtime.SetService(a.config.Service)
+
+	_ = a.InitAppConfig()
 	_ = tracing.Init(ctx)
 	_ = metric.Init()
 
@@ -40,6 +48,17 @@ func (a *App) Run() {
 	}
 
 	_ = a.HTTPServer()
+}
+
+func (a *App) InitAppConfig() error {
+	ctx := context.Background()
+	b, err := config.GetConfig().Get(ctx, a.config.Service)
+
+	if err != nil {
+		return err
+	}
+	err = yaml.Unmarshal(b, a.config.Config)
+	return err
 }
 
 func (a *App) HTTPServer() error {
