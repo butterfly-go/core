@@ -10,7 +10,7 @@ type Config interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 }
 
-type ConfigObject interface {
+type AppConfig interface {
 	Print()
 }
 

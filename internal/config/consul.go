@@ -31,10 +31,9 @@ func NewConsulConfig() (*ConsulConfig, error) {
 		kv:     kv,
 		client: client,
 	}, nil
-
 }
 
-func (c *ConsulConfig) Get(ctx context.Context, key string) ([]byte, error) {
+func (c *ConsulConfig) Get(_ context.Context, key string) ([]byte, error) {
 	pair, _, err := c.kv.Get(key, nil)
 	if err != nil {
 		return nil, err

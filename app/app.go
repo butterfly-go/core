@@ -16,7 +16,7 @@ import (
 
 type Config struct {
 	Service      string
-	Config       config.ConfigObject
+	Config       config.AppConfig
 	Router       func(*gin.Engine)
 	GRPCRegister func(*grpc.Server)
 }
