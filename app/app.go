@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"butterfly.orx.me/core/internal/config"
+	"butterfly.orx.me/core/internal/log"
 	"butterfly.orx.me/core/internal/observe/metric"
 	"butterfly.orx.me/core/internal/observe/tracing"
 	"butterfly.orx.me/core/internal/runtime"
@@ -52,9 +53,12 @@ func (a *App) Run() {
 
 func (a *App) InitAppConfig() error {
 	ctx := context.Background()
-	b, err := config.GetConfig().Get(ctx, a.config.Service)
-
+	logger := log.CoreLogger("app.init.config")
+	b, err := config.GetConfig().Get(ctx, a.config.ConfigKey())
 	if err != nil {
+		logger.Error("get app config error",
+			"key", a.config.ConfigKey(),
+			"error", err.Error())
 		return err
 	}
 	err = yaml.Unmarshal(b, a.config.Config)
