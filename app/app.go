@@ -40,6 +40,7 @@ func (a *App) Run() {
 	runtime.SetService(a.config.Service)
 
 	appendFn(
+		NewFn(config.Init),
 		NewFn(a.InitAppConfig),
 		NewFn(metric.Init),
 		NewFn(tracing.Init))
