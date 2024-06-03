@@ -1,7 +1,13 @@
 package arg
 
-import "testing"
+import (
+	"os"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestArgString(t *testing.T) {
-	t.Log(String("tracing-endpoint"))
+	os.Setenv("BUTTERFLY_TRACING_ENDPOINT", "otel")
+	assert.Equal(t, String("tracing-endpoint"), "otel")
 }

@@ -1,15 +1,17 @@
 package arg
 
 import (
+	"log/slog"
 	"os"
 	"strings"
 )
 
 func String(key string) string {
-	key = strings.Replace(key, "-", "_", -1)
-	key = strings.ToUpper(key)
-	key = "BUTTERFLY_" + key
-	return os.Getenv(key)
+	envKey := strings.Replace(key, "-", "_", -1)
+	envKey = strings.ToUpper(envKey)
+	envKey = "BUTTERFLY_" + envKey
+	slog.Debug("arg get string", "key", key, "env_key", envKey)
+	return os.Getenv(envKey)
 }
 
 func Bool(key string) bool {
