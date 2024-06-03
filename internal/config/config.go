@@ -53,4 +53,5 @@ func CoreConfigInit() error {
 		return err
 	}
 	err = yaml.Unmarshal(b, coreConfig)
+	return err
 }
