@@ -1,13 +1,23 @@
 package config
 
-import "context"
+import (
+	"context"
+
+	"butterfly.orx.me/core/mod"
+)
 
 var (
 	config Config
+
+	coreConfig = new(mod.CoreConfig)
 )
 
 type Config interface {
 	Get(ctx context.Context, key string) ([]byte, error)
+}
+
+func CoreConfig() *mod.CoreConfig {
+	return coreConfig
 }
 
 type AppConfig interface {
