@@ -3,7 +3,10 @@ package config
 import (
 	"context"
 
+	"butterfly.orx.me/core/internal/log"
+	"butterfly.orx.me/core/internal/runtime"
 	"butterfly.orx.me/core/mod"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -36,4 +39,18 @@ func Init() error {
 
 func GetConfig() Config {
 	return config
+}
+
+func CoreConfigInit() error {
+	ctx := context.Background()
+	logger := log.CoreLogger("core.config.init")
+	configKey := runtime.Service()
+	b, err := GetConfig().Get(ctx, configKey)
+	if err != nil {
+		logger.Error("get app config error",
+			"key", configKey,
+			"error", err.Error())
+		return err
+	}
+	err = yaml.Unmarshal(b, coreConfig)
 }
