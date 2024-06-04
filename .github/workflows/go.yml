@@ -18,7 +18,7 @@ jobs:
       # Label used to access the service container
       consul:
         # Docker Hub image
-        image: consul
+        image: hashicorp/consul:1.18
     env:
       BUTTERFLY_CONFIG_CONSUL_ADDRESS: "consul:8500"
     steps:
