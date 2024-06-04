@@ -34,9 +34,15 @@ func NewConsulConfig() (*ConsulConfig, error) {
 }
 
 func (c *ConsulConfig) Get(_ context.Context, key string) ([]byte, error) {
+	logger := log.CoreLogger("config.consul")
+	logger.Info("get config",
+		"key", key)
 	pair, _, err := c.kv.Get(key, nil)
 	if err != nil {
 		return nil, err
+	}
+	if pair == nil {
+		return []byte(""), nil
 	}
 	return pair.Value, nil
 }
