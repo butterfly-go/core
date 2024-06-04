@@ -42,6 +42,7 @@ func (a *App) Run() {
 	appendFn(
 		NewFn(config.Init),
 		NewFn(a.InitAppConfig),
+		NewFn(config.CoreConfigInit),
 		NewFn(metric.Init),
 		NewFn(tracing.Init))
 
