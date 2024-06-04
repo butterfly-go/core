@@ -11,8 +11,16 @@ on:
 
 jobs:
 
-  build:
+  test:
     runs-on: ubuntu-latest
+    container: golang
+    services:
+      # Label used to access the service container
+      consul:
+        # Docker Hub image
+        image: consul
+    env:
+      BUTTERFLY_CONFIG_CONSUL_ADDRESS: "consul:8500"
     steps:
     - uses: actions/checkout@v3
 
