@@ -32,7 +32,7 @@ jobs:
       uses: blablacar/action-consul-kv@master
       with:
         key: foo
-        value: bar
+        value: ""
         host: consul
 
     - name: Build
