@@ -31,7 +31,7 @@ jobs:
     - name: Set value
       uses: blablacar/action-consul-kv@master
       with:
-        key: foo
+        key: test
         value: ""
         host: consul
 
