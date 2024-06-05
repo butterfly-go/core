@@ -8,6 +8,7 @@ import (
 
 func String(key string) string {
 	envKey := strings.Replace(key, "-", "_", -1)
+	envKey = strings.Replace(envKey, ".", "_", -1)
 	envKey = strings.ToUpper(envKey)
 	envKey = "BUTTERFLY_" + envKey
 	slog.Debug("arg get string", "key", key, "env_key", envKey)

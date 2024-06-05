@@ -11,8 +11,17 @@ on:
 
 jobs:
 
-  build:
+  test:
     runs-on: ubuntu-latest
+    container: golang
+    services:
+      # Label used to access the service container
+      consul:
+        # Docker Hub image
+        image: hashicorp/consul:1.18
+    env:
+      BUTTERFLY_CONFIG_CONSUL_ADDRESS: "consul:8500"
+      BUTTERFLY_TRACING_ENDPOINT: "otel:9000"
     steps:
     - uses: actions/checkout@v3
 
@@ -20,6 +29,12 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: '1.21'
+    - name: Set value
+      uses: blablacar/action-consul-kv@master
+      with:
+        key: test
+        value: ""
+        host: consul
 
     - name: Build
       run: go build -v ./...

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,6 +34,7 @@ func setup() {
 		},
 	})
 	go app.Run()
+	time.Sleep(time.Second * 5)
 }
 
 func teardown() {
