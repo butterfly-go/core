@@ -21,7 +21,7 @@ jobs:
         image: hashicorp/consul:1.18
     env:
       BUTTERFLY_CONFIG_CONSUL_ADDRESS: "consul:8500"
-      BUTTERFLY_TRACE_ENDPOINT: "otel:9000"
+      BUTTERFLY_TRACEING_ENDPOINT: "otel:9000"
     steps:
     - uses: actions/checkout@v3
 
