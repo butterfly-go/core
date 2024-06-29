@@ -11,6 +11,7 @@ import (
 
 var (
 	mongoClients = make(map[string]*mongo.Client)
+	timeout      = 10 * time.Second
 )
 
 func InitMongo() error {
@@ -30,7 +31,7 @@ func GetMongoClients(k string) *mongo.Client {
 }
 
 func setupMongo(k, v string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(v))
 	if err != nil {
