@@ -8,6 +8,7 @@ import (
 	"butterfly.orx.me/core/internal/observe/metric"
 	"butterfly.orx.me/core/internal/observe/tracing"
 	"butterfly.orx.me/core/internal/runtime"
+	"butterfly.orx.me/core/internal/store"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"google.golang.org/grpc"
@@ -44,7 +45,9 @@ func (a *App) Run() {
 		NewFn(a.InitAppConfig),
 		NewFn(config.CoreConfigInit),
 		NewFn(metric.Init),
-		NewFn(tracing.Init))
+		NewFn(tracing.Init),
+		NewFn(store.Init),
+	)
 
 	// do func init
 	err := do()
