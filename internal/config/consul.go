@@ -44,5 +44,6 @@ func (c *ConsulConfig) Get(_ context.Context, key string) ([]byte, error) {
 	if pair == nil {
 		return []byte(""), nil
 	}
+	logger.Info("get key response ", "len", len(pair.Value))
 	return pair.Value, nil
 }

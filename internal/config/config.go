@@ -53,5 +53,10 @@ func CoreConfigInit() error {
 		return err
 	}
 	err = yaml.Unmarshal(b, coreConfig)
-	return err
+	if err != nil {
+		return err
+	}
+	logger.Info("core config",
+		"store_mongo", len(coreConfig.Store.Mongo))
+	return nil
 }
