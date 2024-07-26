@@ -20,6 +20,8 @@ type Config struct {
 	Config       config.AppConfig
 	Router       func(*gin.Engine)
 	GRPCRegister func(*grpc.Server)
+	InitFunc     []func() error
+	TeardownFunc []func() error
 }
 
 func (c Config) ConfigKey() string {
@@ -48,6 +50,10 @@ func (a *App) Run() {
 		NewFn(tracing.Init),
 		NewFn(store.Init),
 	)
+
+	for _, fn := range a.config.InitFunc {
+		appendFn(NewFn(fn))
+	}
 
 	// do func init
 	err := do()
