@@ -26,6 +26,6 @@ func NewDB(dsn string) (*DB, error) {
 	return db, nil
 }
 
-func GetDB(k string) *DB {
+func GetDB(_ string) *DB {
 	return nil
 }
