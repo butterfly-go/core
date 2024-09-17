@@ -5,5 +5,9 @@ func Init() error {
 	if err != nil {
 		return err
 	}
+	err = InitSqlDB()
+	if err != nil {
+		return err
+	}
 	return InitMongo()
 }
