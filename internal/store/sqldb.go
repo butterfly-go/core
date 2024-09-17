@@ -12,10 +12,10 @@ var (
 	sqldbClients = make(map[string]*sql.DB)
 )
 
-func InitSqlDB() error {
+func InitSQLDB() error {
 	config := config.CoreConfig().Store.DB
 	for k, v := range config {
-		err := setupSqlDB(k, v)
+		err := setupSQLDB(k, v)
 		if err != nil {
 			return err
 		}
@@ -23,11 +23,11 @@ func InitSqlDB() error {
 	return nil
 }
 
-func GetSqlDB(k string) *sql.DB {
+func GetSQLDB(k string) *sql.DB {
 	return sqldbClients[k]
 }
 
-func setupSqlDB(k string, v mod.DBConfig) error {
+func setupSQLDB(k string, v mod.DBConfig) error {
 	db, err := sql.Open("mysql", dbConfigToDSN(v))
 	if err != nil {
 		return err

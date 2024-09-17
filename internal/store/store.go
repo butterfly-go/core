@@ -5,7 +5,7 @@ func Init() error {
 	if err != nil {
 		return err
 	}
-	err = InitSqlDB()
+	err = InitSQLDB()
 	if err != nil {
 		return err
 	}

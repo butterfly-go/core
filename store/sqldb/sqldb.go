@@ -7,5 +7,5 @@ import (
 )
 
 func GetDB(name string) *sql.DB {
-	return store.GetSqlDB(name)
+	return store.GetSQLDB(name)
 }
