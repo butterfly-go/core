@@ -25,9 +25,9 @@ type RedisConfig struct {
 }
 
 type DBConfig struct {
-	Host   string `yaml:"host"`
-	Port   int    `yaml:"port"`
-	User   string `yaml:"user"`
-	Pass   string `yaml:"pass"`
-	DBName string `yaml:"db_name"`
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
+	DBName   string `yaml:"db_name"`
 }
