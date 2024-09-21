@@ -39,7 +39,7 @@ func newHTTPTraceExporter(ctx context.Context) (*otlptrace.Exporter, error) {
 func newGRPCExporter(ctx context.Context) (*otlptrace.Exporter, error) {
 	endpoint := arg.String("tracing-endpoint")
 	slog.Info("tracing grpc endpoint", "endpoint", endpoint)
-	conn, err := grpc.Dial(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}

@@ -10,7 +10,7 @@ linters:
     - dogsled
     - durationcheck
     - errcheck
-    - exportloopref
+    - copyloopvar
     - govet
     - gosimple
     - gofmt
