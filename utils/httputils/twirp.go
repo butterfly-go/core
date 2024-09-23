@@ -8,13 +8,12 @@ import (
 
 // TwirpHandler
 type TwirpHandler interface {
-	PathPrefix() string
 	ServeHTTP(http.ResponseWriter, *http.Request)
 }
 
 // RegisterTwirpHandler
-func RegisterTwirpHandler(m *gin.Engine, handler TwirpHandler) {
-	m.Any(handler.PathPrefix()+":method", func(c *gin.Context) {
+func RegisterTwirpHandler(m *gin.Engine, prefix string, handler TwirpHandler) {
+	m.Any(prefix+":method", func(c *gin.Context) {
 		handler.ServeHTTP(c.Writer, c.Request)
 	})
 }
