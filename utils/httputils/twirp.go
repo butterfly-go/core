@@ -13,7 +13,7 @@ type TwirpHandler interface {
 
 // RegisterTwirpHandler
 func RegisterTwirpHandler(m *gin.Engine, prefix string, handler TwirpHandler) {
-	m.Any(prefix+":method", func(c *gin.Context) {
+	m.POST(prefix+":method", func(c *gin.Context) {
 		handler.ServeHTTP(c.Writer, c.Request)
 	})
 }
