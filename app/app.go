@@ -79,6 +79,9 @@ func (a *App) InitAppConfig() error {
 		return err
 	}
 	err = yaml.Unmarshal(b, a.config.Config)
+	if err != nil {
+		logger.Error("unmarshal failed", "error", err.Error())
+	}
 	return err
 }
 
