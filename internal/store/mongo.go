@@ -1,12 +1,11 @@
 package store
 
 import (
-	"context"
 	"time"
 
 	"butterfly.orx.me/core/internal/config"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 var (
@@ -31,9 +30,7 @@ func GetMongoClients(k string) *mongo.Client {
 }
 
 func setupMongo(k, v string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(v))
+	client, err := mongo.Connect(options.Client().ApplyURI(v))
 	if err != nil {
 		return err
 	}
