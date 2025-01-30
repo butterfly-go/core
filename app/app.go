@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"net"
 
 	"butterfly.orx.me/core/internal/config"
 	"butterfly.orx.me/core/internal/log"
@@ -95,6 +97,16 @@ func (a *App) HTTPServer() error {
 }
 
 func (a *App) GRPCServer() {
+	var port = 9090
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		panic(err)
+	}
 	server := grpc.NewServer()
 	a.config.GRPCRegister(server)
+	// run grpc server
+	log.CoreLogger("grpc").Info("grpc server listening ", "addr", lis.Addr())
+	if err := server.Serve(lis); err != nil {
+		panic(err)
+	}
 }
