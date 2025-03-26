@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 
 	"butterfly.orx.me/core/internal/config"
@@ -89,6 +90,15 @@ func (a *App) InitAppConfig() error {
 
 func (a *App) HTTPServer() error {
 	r := gin.Default()
+
+	// Disable log by default
+	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		Output: io.Discard,
+	}))
+
+	// Recovery middleware recovers from any panics and writes a 500 if there was one.
+	r.Use(gin.Recovery())
+
 	r.Use(otelgin.Middleware(a.config.Service))
 	if a.config.Router != nil {
 		a.config.Router(r)
