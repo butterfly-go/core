@@ -89,8 +89,7 @@ func (a *App) InitAppConfig() error {
 }
 
 func (a *App) HTTPServer() error {
-	r := gin.Default()
-
+	r := gin.New()
 	// Disable log by default
 	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{
 		Output: io.Discard,
