@@ -2,7 +2,10 @@ package config
 
 import (
 	"context"
+	"errors"
+	"os"
 
+	"butterfly.orx.me/core/internal/arg"
 	"butterfly.orx.me/core/internal/log"
 	"butterfly.orx.me/core/internal/runtime"
 	"butterfly.orx.me/core/mod"
@@ -27,12 +30,37 @@ type AppConfig interface {
 	Print()
 }
 
+type FileConfig struct {
+	path string
+}
+
+func NewFileConfig() (*FileConfig, error) {
+	path := arg.String("config.file.path")
+	if path == "" {
+		return nil, errors.New("config.file.path not set")
+	}
+	return &FileConfig{path: path}, nil
+}
+
+func (f *FileConfig) Get(_ context.Context, key string) ([]byte, error) {
+	// For file config, ignore key and just read the file
+	return os.ReadFile(f.path)
+}
+
 func Init() error {
+	configType := arg.String("config.type")
+	if configType == "file" {
+		c, err := NewFileConfig()
+		if err != nil {
+			return err
+		}
+		config = c
+		return nil
+	}
 	c, err := NewConsulConfig()
 	if err != nil {
 		return err
 	}
-	// set config
 	config = c
 	return nil
 }
