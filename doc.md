@@ -576,42 +576,57 @@ export BUTTERFLY_TRACING_ENDPOINT=localhost:4317
 
 ### Logging System
 
-The framework uses Go standard library's `slog` for structured logging:
+The framework provides a simple wrapper around Go standard library's `slog` for structured logging with context support:
 
 ```go
 import (
-    "butterfly.orx.me/core/internal/log"
+    "butterfly.orx.me/core/log"
     "log/slog"
 )
 
-// Create component logger
-logger := log.CoreLogger("user-service")
-
-// Structured logging
-logger.Info("user created",
-    "user_id", user.ID,
-    "email", user.Email,
-    "timestamp", time.Now(),
-)
-
-// Different log levels
-logger.Debug("debug info", "key", "value")
-logger.Info("info message", "count", 42)
-logger.Warn("warning", "retry", 3)
-logger.Error("error occurred", "error", err)
-
-// Use logging in context
-import "butterfly.orx.me/core/log"
-
+// Get logger from context (returns default logger if none exists)
 func handler(c *gin.Context) {
     ctx := c.Request.Context()
     
-    // Get logger from context
+    // Get logger from context - always returns a valid logger
     logger := log.FromContext(ctx)
     logger.Info("handling request", "path", c.Request.URL.Path)
     
-    // Put logger into context
-    ctx = log.WithLogger(ctx, logger.With("request_id", "123"))
+    // Create a logger with additional context
+    contextLogger := slog.With("request_id", "123", "user_id", "456")
+    
+    // Store logger in context for downstream use
+    ctx = log.WithLogger(ctx, contextLogger)
+    
+    // Pass context to other functions
+    processRequest(ctx)
+}
+
+func processRequest(ctx context.Context) {
+    // Retrieve logger from context
+    logger := log.FromContext(ctx)
+    
+    // Use structured logging
+    logger.Info("processing request",
+        "step", "validation",
+        "timestamp", time.Now(),
+    )
+    
+    // Different log levels
+    logger.Debug("debug info", "key", "value")
+    logger.Info("info message", "count", 42)
+    logger.Warn("warning", "retry", 3)
+    logger.Error("error occurred", "error", err)
+}
+
+// Direct usage of slog (without context)
+func simpleLogging() {
+    // Use default logger
+    slog.Info("simple log message", "key", "value")
+    
+    // Create custom logger with attributes
+    logger := slog.With("service", "user-service", "version", "1.0.0")
+    logger.Info("service started")
 }
 ```
 
@@ -627,9 +642,10 @@ import (
     "fmt"
     "net/http"
     "time"
+    "log/slog"
     
     "butterfly.orx.me/core/app"
-    "butterfly.orx.me/core/internal/log"
+    "butterfly.orx.me/core/log"
     "butterfly.orx.me/core/store/gorm"
     "butterfly.orx.me/core/store/redis"
     "github.com/gin-gonic/gin"
@@ -639,7 +655,7 @@ import (
 var (
     db     *gormDriver.DB
     cache  *redis.Client
-    logger = log.CoreLogger("user-service")
+    logger = slog.With("service", "user-service")
 )
 
 type User struct {
@@ -718,8 +734,12 @@ func errorHandler() gin.HandlerFunc {
         
         if len(c.Errors) > 0 {
             err := c.Errors.Last()
+            
+            // Get logger from context or use default
+            logger := log.FromContext(c.Request.Context())
             logger.Error("request failed", 
                 "path", c.Request.URL.Path,
+                "method", c.Request.Method,
                 "error", err.Error(),
             )
             
@@ -782,7 +802,9 @@ func createUser(c *gin.Context) {
         return
     }
     
-    logger.Info("user created", "user_id", user.ID)
+    // Use context-based logging
+    logger := log.FromContext(c.Request.Context())
+    logger.Info("user created", "user_id", user.ID, "email", user.Email)
     
     // Clear cache
     if cache != nil {
