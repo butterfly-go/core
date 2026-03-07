@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
@@ -20,7 +21,7 @@ func TestFileConfig_Get_Success(t *testing.T) {
 	tmpfile.Close()
 
 	fc := &FileConfig{path: tmpfile.Name()}
-	data, err := fc.Get(nil, "ignored")
+	data, err := fc.Get(context.Background(), "ignored")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -31,7 +32,7 @@ func TestFileConfig_Get_Success(t *testing.T) {
 
 func TestFileConfig_Get_FileNotFound(t *testing.T) {
 	fc := &FileConfig{path: "/tmp/nonexistent-file.yaml"}
-	_, err := fc.Get(nil, "ignored")
+	_, err := fc.Get(context.Background(), "ignored")
 	if err == nil {
 		t.Error("expected error for missing file, got nil")
 	}
