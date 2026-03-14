@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 
 	"butterfly.orx.me/core/internal/config"
 	"butterfly.orx.me/core/internal/log"
@@ -20,6 +21,7 @@ import (
 
 type Config struct {
 	Service      string
+	Namespace    string
 	Config       config.AppConfig
 	Router       func(*gin.Engine)
 	GRPCRegister func(*grpc.Server)
@@ -28,7 +30,9 @@ type Config struct {
 }
 
 func (c Config) ConfigKey() string {
-	// @todo
+	if c.Namespace != "" {
+		return strings.Trim(c.Namespace, "/") + "/" + c.Service
+	}
 	return c.Service
 }
 
@@ -44,6 +48,7 @@ func New(config *Config) *App {
 
 func (a *App) Run() {
 	runtime.SetService(a.config.Service)
+	runtime.SetConfigKey(a.config.ConfigKey())
 
 	appendFn(
 		NewFn(config.Init),
