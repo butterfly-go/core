@@ -9,6 +9,7 @@ type StoreConfig struct {
 	Mongo map[string]MongoConfig `yaml:"mongo"`
 	Redis map[string]RedisConfig `yaml:"redis"`
 	DB    map[string]DBConfig    `yaml:"db"`
+	S3    map[string]S3Config    `yaml:"s3"`
 }
 
 type OtelConfig struct {
@@ -30,4 +31,17 @@ type DBConfig struct {
 	User     string `yaml:"user"`
 	Password string `yaml:"password"`
 	DBName   string `yaml:"db_name"`
+}
+
+type S3Config struct {
+	Endpoint        string `yaml:"endpoint"`
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	AK              string `yaml:"ak"`
+	SK              string `yaml:"sk"`
+	SessionToken    string `yaml:"session_token"`
+	Region          string `yaml:"region"`
+	Bucket          string `yaml:"bucket"`
+	UseSSL          bool   `yaml:"use_ssl"`
+	UsePathStyle    bool   `yaml:"use_path_style"`
 }
