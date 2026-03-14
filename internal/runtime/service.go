@@ -1,7 +1,8 @@
 package runtime
 
 var (
-	service string
+	service   string
+	configKey string
 )
 
 func Service() string {
@@ -10,4 +11,15 @@ func Service() string {
 
 func SetService(srv string) {
 	service = srv
+}
+
+func ConfigKey() string {
+	if configKey != "" {
+		return configKey
+	}
+	return service
+}
+
+func SetConfigKey(key string) {
+	configKey = key
 }

@@ -17,10 +17,13 @@ func NewConsulConfig() (*ConsulConfig, error) {
 	// Get a new client
 	logger := log.CoreLogger("config.consul")
 	addr := arg.String("config.consul.address")
+	namespace := arg.String("config.consul.namespace")
 	logger.Info("create new consul config",
-		"addr", addr)
+		"addr", addr,
+		"namespace", namespace)
 	client, err := capi.NewClient(&capi.Config{
-		Address: addr,
+		Address:   addr,
+		Namespace: namespace,
 	})
 	if err != nil {
 		return nil, err

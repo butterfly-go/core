@@ -72,7 +72,7 @@ func GetConfig() Config {
 func CoreConfigInit() error {
 	ctx := context.Background()
 	logger := log.CoreLogger("core.config.init")
-	configKey := runtime.Service()
+	configKey := runtime.ConfigKey()
 	b, err := GetConfig().Get(ctx, configKey)
 	if err != nil {
 		logger.Error("get app config error",
