@@ -11,6 +11,7 @@ import (
 	"butterfly.orx.me/core/internal/log"
 	"butterfly.orx.me/core/internal/observe/metric"
 	"butterfly.orx.me/core/internal/observe/tracing"
+	corelog "butterfly.orx.me/core/log"
 	"butterfly.orx.me/core/internal/runtime"
 	"butterfly.orx.me/core/internal/store"
 	"github.com/gin-gonic/gin"
@@ -23,6 +24,7 @@ type Config struct {
 	Service      string
 	Namespace    string
 	Config       config.AppConfig
+	LogConfig    corelog.LogConfig
 	Router       func(*gin.Engine)
 	GRPCRegister func(*grpc.Server)
 	InitFunc     []func() error
@@ -49,6 +51,8 @@ func New(config *Config) *App {
 func (a *App) Run() {
 	runtime.SetService(a.config.Service)
 	runtime.SetConfigKey(a.config.ConfigKey())
+
+	corelog.Init(a.config.LogConfig)
 
 	appendFn(
 		NewFn(config.Init),
