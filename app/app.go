@@ -13,6 +13,7 @@ import (
 	"butterfly.orx.me/core/internal/observe/tracing"
 	"butterfly.orx.me/core/internal/runtime"
 	"butterfly.orx.me/core/internal/store"
+	corelog "butterfly.orx.me/core/log"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"google.golang.org/grpc"
@@ -23,6 +24,7 @@ type Config struct {
 	Service      string
 	Namespace    string
 	Config       config.AppConfig
+	LogConfig    corelog.LogConfig
 	Router       func(*gin.Engine)
 	GRPCRegister func(*grpc.Server)
 	InitFunc     []func() error
@@ -49,6 +51,8 @@ func New(config *Config) *App {
 func (a *App) Run() {
 	runtime.SetService(a.config.Service)
 	runtime.SetConfigKey(a.config.ConfigKey())
+
+	corelog.Init(a.config.LogConfig)
 
 	appendFn(
 		NewFn(config.Init),
