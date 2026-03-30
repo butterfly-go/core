@@ -48,6 +48,11 @@ func newGRPCExporter(ctx context.Context) (*otlptrace.Exporter, error) {
 }
 
 func Init() error {
+	if arg.Bool("tracing-disable") {
+		slog.Info("tracing is disabled, skipping initialization")
+		return nil
+	}
+
 	ctx := context.Background()
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
