@@ -9,5 +9,9 @@ func Init() error {
 	if err != nil {
 		return err
 	}
-	return InitMongo()
+	err = InitMongo()
+	if err != nil {
+		return err
+	}
+	return InitS3()
 }
