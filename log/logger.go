@@ -5,15 +5,11 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+
+	"butterfly.orx.me/core/mod"
 )
 
-type LogConfig struct {
-	Level     string `json:"level" yaml:"level"`
-	Format    string `json:"format" yaml:"format"`
-	AddSource bool   `json:"add_source" yaml:"add_source"`
-}
-
-func Init(cfg LogConfig) {
+func Init(cfg mod.LogConfig) {
 	level := parseLevel(cfg.Level)
 	opts := &slog.HandlerOptions{
 		Level:     level,

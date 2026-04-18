@@ -3,6 +3,8 @@ package log
 import (
 	"log/slog"
 	"testing"
+
+	"butterfly.orx.me/core/mod"
 )
 
 func TestParseLevel(t *testing.T) {
@@ -34,23 +36,23 @@ func TestParseLevel(t *testing.T) {
 func TestInit(t *testing.T) {
 	tests := []struct {
 		name string
-		cfg  LogConfig
+		cfg  mod.LogConfig
 	}{
 		{
 			name: "json format with debug level and source",
-			cfg:  LogConfig{Level: "debug", Format: "json", AddSource: true},
+			cfg:  mod.LogConfig{Level: "debug", Format: "json", AddSource: true},
 		},
 		{
 			name: "text format with error level",
-			cfg:  LogConfig{Level: "error", Format: "text", AddSource: false},
+			cfg:  mod.LogConfig{Level: "error", Format: "text", AddSource: false},
 		},
 		{
 			name: "default format and level",
-			cfg:  LogConfig{},
+			cfg:  mod.LogConfig{},
 		},
 		{
 			name: "unknown format falls back to text",
-			cfg:  LogConfig{Format: "xml"},
+			cfg:  mod.LogConfig{Format: "xml"},
 		},
 	}
 	for _, tt := range tests {
