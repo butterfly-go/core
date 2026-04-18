@@ -54,6 +54,7 @@ func (a *App) Run() {
 		NewFn(config.Init),
 		NewFn(a.InitAppConfig),
 		NewFn(config.CoreConfigInit),
+		NewFn(config.LogInit),
 		NewFn(metric.Init),
 		NewFn(tracing.Init),
 		NewFn(store.Init),

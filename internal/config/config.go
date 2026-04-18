@@ -8,6 +8,7 @@ import (
 	"butterfly.orx.me/core/internal/arg"
 	"butterfly.orx.me/core/internal/log"
 	"butterfly.orx.me/core/internal/runtime"
+	corelog "butterfly.orx.me/core/log"
 	"butterfly.orx.me/core/mod"
 	"gopkg.in/yaml.v3"
 )
@@ -86,5 +87,10 @@ func CoreConfigInit() error {
 	}
 	logger.Info("core config",
 		"store_mongo", len(coreConfig.Store.Mongo))
+	return nil
+}
+
+func LogInit() error {
+	corelog.Init(coreConfig.Log)
 	return nil
 }

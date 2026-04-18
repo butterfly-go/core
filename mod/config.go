@@ -3,6 +3,13 @@ package mod
 type CoreConfig struct {
 	Store StoreConfig `yaml:"store"`
 	Otel  OtelConfig  `yaml:"otel"`
+	Log   LogConfig   `yaml:"log"`
+}
+
+type LogConfig struct {
+	Level     string `json:"level" yaml:"level"`
+	Format    string `json:"format" yaml:"format"`
+	AddSource bool   `json:"add_source" yaml:"add_source"`
 }
 
 type StoreConfig struct {
