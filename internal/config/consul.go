@@ -18,7 +18,7 @@ func NewConsulConfig() (*ConsulConfig, error) {
 	logger := log.CoreLogger("config.consul")
 	addr := arg.String("config.consul.address")
 	namespace := arg.String("config.consul.namespace")
-	logger.Info("create new consul config",
+	logger.Debug("create new consul config",
 		"addr", addr,
 		"namespace", namespace)
 	client, err := capi.NewClient(&capi.Config{
@@ -38,7 +38,7 @@ func NewConsulConfig() (*ConsulConfig, error) {
 
 func (c *ConsulConfig) Get(_ context.Context, key string) ([]byte, error) {
 	logger := log.CoreLogger("config.consul")
-	logger.Info("get config",
+	logger.Debug("get config",
 		"key", key)
 	pair, _, err := c.kv.Get(key, nil)
 	if err != nil {
@@ -47,6 +47,6 @@ func (c *ConsulConfig) Get(_ context.Context, key string) ([]byte, error) {
 	if pair == nil {
 		return []byte(""), nil
 	}
-	logger.Info("get key response ", "len", len(pair.Value))
+	logger.Debug("get key response", "key", key, "len", len(pair.Value))
 	return pair.Value, nil
 }
