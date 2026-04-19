@@ -1,5 +1,5 @@
 .tmp*
 .claude/
 openspec/
-.github/
+.github/skills
 .agents/

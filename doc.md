@@ -7,21 +7,23 @@ Butterfly is a lightweight microservice framework designed for the Go language, 
 ## Core Features
 
 - **Configuration Management**: Supports file configuration and Consul configuration center, flexibly controlled through environment variables
-- **Service Runtime**: Provides application lifecycle management, supports initialization function chain and graceful shutdown
+- **Service Runtime**: Provides application lifecycle management with initialization function chain
 - **Transport Layer Support**: 
   - HTTP server (based on Gin framework)
-  - gRPC server support
+  - gRPC server support (port 9090)
   - Twirp RPC support
 - **Data Storage**: 
   - GORM (MySQL and other relational databases)
   - MongoDB v2 driver
   - Redis client
   - Native SQL database connections
+  - S3-compatible object storage (AWS SDK v2)
 - **Observability**:
-  - Prometheus metrics collection and exposure
+  - Prometheus metrics collection and exposure (port 2223)
   - OpenTelemetry distributed tracing
-  - Structured logging system
+  - Structured logging system (based on `log/slog`)
 - **Middleware Integration**: Automatic integration of OpenTelemetry middleware for request tracing
+- **Testing Utilities**: Mock logging support for unit testing
 
 ## Installation
 
@@ -44,7 +46,8 @@ import (
 func main() {
     // Create application configuration
     config := &app.Config{
-        Service: "my-service",
+        Service:   "my-service",
+        Namespace: "my-namespace", // optional namespace prefix for config key
         Router: func(r *gin.Engine) {
             r.GET("/ping", func(c *gin.Context) {
                 c.JSON(200, gin.H{"message": "pong"})
@@ -65,7 +68,7 @@ func main() {
 The framework uses environment variables for configuration, all configuration items are prefixed with `BUTTERFLY_`:
 
 ```bash
-# Configuration type: file or consul
+# Configuration type: file or consul (default: consul)
 export BUTTERFLY_CONFIG_TYPE=file
 
 # File configuration path
@@ -73,10 +76,12 @@ export BUTTERFLY_CONFIG_FILE_PATH=/path/to/config.yaml
 
 # Consul configuration
 export BUTTERFLY_CONFIG_CONSUL_ADDRESS=consul:8500
+export BUTTERFLY_CONFIG_CONSUL_NAMESPACE=my-namespace  # optional namespace prefix
 
 # Tracing configuration
 export BUTTERFLY_TRACING_ENDPOINT=localhost:4318
-export BUTTERFLY_TRACING_PROVIDER=http  # or grpc
+export BUTTERFLY_TRACING_PROVIDER=http  # or grpc (default: grpc)
+export BUTTERFLY_TRACING_DISABLE=true   # set to "true" or "1" to disable tracing
 
 # Prometheus push configuration
 export BUTTERFLY_PROMETHEUS_PUSH_ENDPOINT=http://pushgateway:9091
@@ -115,6 +120,24 @@ store:
       user: "root"
       password: "password"
       db_name: "myapp"
+  
+  # S3-compatible object storage configuration
+  s3:
+    assets:
+      endpoint: "s3.amazonaws.com"
+      access_key_id: "AKIAIOSFODNN7EXAMPLE"   # or use "ak" field
+      secret_access_key: "wJalrXUtnFEMI/K7MDENG"  # or use "sk" field
+      session_token: ""       # optional
+      region: "us-east-1"
+      bucket: "my-assets"
+      use_ssl: true
+      use_path_style: false   # set to true for MinIO/custom endpoints
+
+# Logging configuration
+log:
+  level: "info"        # debug, info, warn, error (default: info)
+  format: "json"       # json or text (default: text)
+  add_source: false    # include source file location in log entries
 
 # OpenTelemetry configuration
 otel:
@@ -166,8 +189,9 @@ func (c *MyConfig) Print() {
 
 func main() {
     config := &app.Config{
-        Service: "user-service",
-        Config:  &MyConfig{},
+        Service:   "user-service",
+        Namespace: "my-namespace", // optional: config key becomes "my-namespace/user-service"
+        Config:    &MyConfig{},
         
         // HTTP route registration
         Router: setupHTTPRoutes,
@@ -221,13 +245,14 @@ The framework uses a function chain pattern to manage the initialization process
 
 ```go
 // Built-in initialization order
-1. config.Init()        // Initialize configuration system
-2. app.InitAppConfig()  // Load application configuration
+1. config.Init()           // Initialize configuration system
+2. app.InitAppConfig()     // Load application configuration
 3. config.CoreConfigInit() // Initialize core configuration
-4. metric.Init()        // Initialize Prometheus metrics
-5. tracing.Init()       // Initialize OpenTelemetry tracing
-6. store.Init()         // Initialize storage connections
-7. Custom InitFunc      // User-defined initialization
+4. config.LogInit()        // Initialize logging (level, format, source)
+5. metric.Init()           // Initialize Prometheus metrics
+6. tracing.Init()          // Initialize OpenTelemetry tracing
+7. store.Init()            // Initialize storage connections (Redis, SQL, MongoDB, S3)
+8. Custom InitFunc         // User-defined initialization
 ```
 
 ## HTTP Service
@@ -319,6 +344,8 @@ func (s *userServer) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.U
 ## Data Storage
 
 ### GORM (MySQL)
+
+GORM connections are created manually via `NewDB()` and managed by the application. The framework automatically integrates OpenTelemetry tracing plugin for GORM queries.
 
 ```go
 import (
@@ -470,6 +497,62 @@ func getUserBySQL(id int) (*User, error) {
 }
 ```
 
+### S3-Compatible Object Storage
+
+```go
+import (
+    "butterfly.orx.me/core/store/s3"
+)
+
+// Get S3 client by configuration key
+func getAssetsClient() *s3.Client {
+    // "assets" corresponds to store.s3.assets in configuration file
+    return s3.GetClient("assets")
+}
+
+// Get the configured bucket name
+func getAssetsBucket() string {
+    return s3.GetBucket("assets")
+}
+
+// Usage example
+func uploadFile(ctx context.Context, key string, body io.Reader) error {
+    client := getAssetsClient()
+    bucket := getAssetsBucket()
+    
+    _, err := client.PutObject(ctx, &awss3.PutObjectInput{
+        Bucket: &bucket,
+        Key:    &key,
+        Body:   body,
+    })
+    return err
+}
+```
+
+Configuration supports AWS S3 and S3-compatible services (MinIO, etc.):
+
+```yaml
+store:
+  s3:
+    assets:
+      endpoint: "s3.amazonaws.com"
+      access_key_id: "AKIAIOSFODNN7EXAMPLE"
+      secret_access_key: "wJalrXUtnFEMI/K7MDENG"
+      region: "us-east-1"
+      bucket: "my-assets"
+      use_ssl: true
+      use_path_style: false
+    # MinIO example
+    local:
+      endpoint: "localhost:9000"
+      ak: "minioadmin"           # shorthand for access_key_id
+      sk: "minioadmin"           # shorthand for secret_access_key
+      region: "us-east-1"
+      bucket: "local-bucket"
+      use_ssl: false
+      use_path_style: true       # required for MinIO
+```
+
 ## Observability
 
 ### Prometheus Metrics
@@ -576,7 +659,35 @@ export BUTTERFLY_TRACING_ENDPOINT=localhost:4317
 
 ### Logging System
 
-The framework provides a simple wrapper around Go standard library's `slog` for structured logging with context support:
+The framework provides a structured logging system based on Go's `log/slog`. Logging is automatically configured during initialization via the `log` section in the config file.
+
+#### Log Configuration
+
+Configure logging in your YAML config:
+
+```yaml
+log:
+  level: "info"        # debug, info, warn/warning, error (default: info)
+  format: "json"       # json or text (default: text)
+  add_source: false    # include source file/line in log entries
+```
+
+#### Core Logger
+
+```go
+import (
+    "butterfly.orx.me/core/log"
+)
+
+// Create a component-scoped logger
+func init() {
+    logger := log.CoreLogger("user-handler")
+    // logger includes "component" attribute automatically
+    logger.Info("handler initialized")
+}
+```
+
+#### Context-based Logging
 
 ```go
 import (
@@ -1495,13 +1606,75 @@ func deleteUser(c *gin.Context) {
 }
 ```
 
+## Testing Utilities
+
+### Mock Logger (testsuite)
+
+The framework provides a mock logger for capturing and asserting log output in unit tests:
+
+```go
+import (
+    "testing"
+    "log/slog"
+    
+    "butterfly.orx.me/core/testsuite"
+)
+
+func TestUserCreation(t *testing.T) {
+    // Create mock logger and capture helper
+    logger, mockLog := testsuite.NewMockLog()
+    
+    // Option 1: Pass logger directly to code under test
+    service := NewUserService(logger)
+    service.CreateUser("test@example.com")
+    
+    // Assert log output
+    if !mockLog.ContainsMessage("user created") {
+        t.Error("expected 'user created' log message")
+    }
+    
+    // Check specific log levels
+    if mockLog.CountLevel(slog.LevelError) > 0 {
+        t.Error("unexpected error logs")
+    }
+    
+    // Get all messages
+    messages := mockLog.Messages()
+    t.Logf("logged messages: %v", messages)
+    
+    // Get full entries with attributes
+    entries := mockLog.Entries()
+    for _, entry := range entries {
+        t.Logf("level=%s msg=%s attrs=%v", entry.Level, entry.Message, entry.Attrs)
+    }
+    
+    // Reset between test cases
+    mockLog.Reset()
+}
+
+func TestWithDefaultLogger(t *testing.T) {
+    _, mockLog := testsuite.NewMockLog()
+    
+    // Option 2: Set as the default slog logger (returns restore function)
+    restore := mockLog.SetAsDefault()
+    defer restore()
+    
+    // Any code using slog.Default() will now be captured
+    slog.Info("this will be captured")
+    
+    if !mockLog.ContainsMessage("this will be captured") {
+        t.Error("message not captured")
+    }
+}
+```
+
 ## Deployment Recommendations
 
 ### Docker Deployment
 
 ```dockerfile
 # Dockerfile
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -1644,7 +1817,16 @@ analyticsDB := sqldb.GetDB("analytics")
 
 ### 2. How to customize log format?
 
-The framework uses `slog`, which can be customized by setting different Handlers:
+The framework automatically configures `slog` during initialization based on the `log` section in your config file:
+
+```yaml
+log:
+  level: "debug"       # debug, info, warn, error
+  format: "json"       # json or text
+  add_source: true     # include source file/line
+```
+
+You can also override programmatically if needed:
 
 ```go
 import (
@@ -1653,13 +1835,13 @@ import (
 )
 
 // JSON format
-jsonHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+jsonHandler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
     Level: slog.LevelDebug,
 })
 slog.SetDefault(slog.New(jsonHandler))
 
 // Text format
-textHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+textHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
     Level: slog.LevelInfo,
 })
 slog.SetDefault(slog.New(textHandler))
