@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.97.1
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-sql-driver/mysql v1.8.1
+	github.com/google/wire v0.7.0
 	github.com/hashicorp/consul/api v1.29.4
 	github.com/prometheus/client_golang v1.20.4
 	github.com/redis/go-redis/v9 v9.6.1

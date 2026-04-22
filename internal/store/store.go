@@ -1,17 +1,9 @@
 package store
 
-func Init() error {
-	err := InitRedis()
-	if err != nil {
-		return err
-	}
-	err = InitSQLDB()
-	if err != nil {
-		return err
-	}
-	err = InitMongo()
-	if err != nil {
-		return err
-	}
-	return InitS3()
+// SetLegacyClients populates all legacy global variables for backward compatibility.
+func SetLegacyClients(redis RedisClients, mongo MongoClients, sqldb SQLDBClients, s3 *S3Store) {
+	SetLegacyRedisClients(redis)
+	SetLegacyMongoClients(mongo)
+	SetLegacySQLDBClients(sqldb)
+	SetLegacyS3(s3)
 }

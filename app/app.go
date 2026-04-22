@@ -13,6 +13,8 @@ import (
 	"butterfly.orx.me/core/internal/observe/tracing"
 	"butterfly.orx.me/core/internal/runtime"
 	"butterfly.orx.me/core/internal/store"
+	corelog "butterfly.orx.me/core/log"
+	"butterfly.orx.me/core/mod"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"google.golang.org/grpc"
@@ -37,7 +39,9 @@ func (c Config) ConfigKey() string {
 }
 
 type App struct {
-	config *Config
+	config  *Config
+	deps    *Dependencies
+	cleanup func()
 }
 
 func New(config *Config) *App {
@@ -50,26 +54,40 @@ func (a *App) Run() {
 	runtime.SetService(a.config.Service)
 	runtime.SetConfigKey(a.config.ConfigKey())
 
-	appendFn(
-		NewFn(config.Init),
-		NewFn(a.InitAppConfig),
-		NewFn(config.CoreConfigInit),
-		NewFn(config.LogInit),
-		NewFn(metric.Init),
-		NewFn(tracing.Init),
-		NewFn(store.Init),
-	)
-
-	for _, fn := range a.config.InitFunc {
-		appendFn(NewFn(fn))
-	}
-
-	// do func init
-	err := do()
+	// Wire-generated dependency initialization
+	deps, cleanup, err := initDeps(mod.ConfigKey(a.config.ConfigKey()))
 	if err != nil {
 		panic(err)
 	}
+	a.deps = deps
+	a.cleanup = cleanup
 
+	// Initialize app-specific config (user config struct)
+	if err := a.initAppConfig(deps.Config); err != nil {
+		panic(err)
+	}
+
+	// Side-effect initialization
+	corelog.Init(deps.CoreConfig.Log)
+	if err := metric.Init(); err != nil {
+		panic(err)
+	}
+	if err := tracing.Init(); err != nil {
+		panic(err)
+	}
+
+	// Set legacy globals for backward compatibility
+	config.SetLegacy(deps.Config, deps.CoreConfig)
+	store.SetLegacyClients(deps.Redis, deps.Mongo, deps.SQLDB, deps.S3)
+
+	// User-provided init functions
+	for _, fn := range a.config.InitFunc {
+		if err := fn(); err != nil {
+			panic(err)
+		}
+	}
+
+	// Start servers
 	if a.config.GRPCRegister != nil {
 		go a.GRPCServer()
 	}
@@ -77,10 +95,10 @@ func (a *App) Run() {
 	_ = a.HTTPServer()
 }
 
-func (a *App) InitAppConfig() error {
+func (a *App) initAppConfig(cfg config.Config) error {
 	ctx := context.Background()
 	logger := log.CoreLogger("app.init.config")
-	b, err := config.GetConfig().Get(ctx, a.config.ConfigKey())
+	b, err := cfg.Get(ctx, a.config.ConfigKey())
 	if err != nil {
 		logger.Error("get app config error",
 			"key", a.config.ConfigKey(),
