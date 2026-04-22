@@ -18,8 +18,8 @@ Metrics:  Prometheus (:2223/metrics)
 ```
 app/           App lifecycle, Wire injector, Dependencies struct
 internal/
-  config/      Config backend (File/Consul), Wire providers
-  store/       Store clients (Redis, Mongo, SQLDB, S3), Wire providers
+  config/      Config backend (File/Consul), Wire providers, registry
+  store/       Store clients (Redis, Mongo, SQLDB, S3), Wire providers, registry
   observe/     Metrics (Prometheus/OTEL) and Tracing (OTEL)
   runtime/     Service name and config key
   arg/         Env var parsing (BUTTERFLY_ prefix)
@@ -31,42 +31,14 @@ mod/           Config structs and Wire types (ConfigKey)
 observe/otel/  Public Prometheus registry access
 ```
 
-## Wire Dependency Injection
+## Architecture
 
-The framework uses Google Wire for compile-time dependency injection. The dependency graph:
-
-```
-ConfigKey → ProvideConfig() → config.Config
-config.Config + ConfigKey → ProvideCoreConfig() → *mod.CoreConfig
-*mod.CoreConfig → ProvideRedisClients() → store.RedisClients (+ cleanup)
-*mod.CoreConfig → ProvideMongoClients() → store.MongoClients (+ cleanup)
-*mod.CoreConfig → ProvideSQLDBClients() → store.SQLDBClients (+ cleanup)
-*mod.CoreConfig → ProvideS3Store() → *store.S3Store
-```
-
-Key files:
-- `app/wire.go` — injector definition (build tag: wireinject)
-- `app/wire_gen.go` — generated code (DO NOT EDIT)
-- `app/deps.go` — Dependencies struct
-
-After Wire init, `app.Run()` populates the internal registry (`internal/store/registry.go`, `internal/config/registry.go`) via `Set*()` functions. Public packages (`store/redis`, `config`, etc.) delegate their `Get*()` calls to the internal registry. The `Set*()` functions are internal-only and not exposed to framework consumers.
-
-### Regenerating Wire Code
-
-```bash
-go install github.com/google/wire/cmd/wire@latest
-wire ./app/...
-```
-
-Run this after changing any Wire provider signatures or the injector.
-
-### Adding a New Wire Provider
-
-1. Create `ProvideXxx(deps...) (Type, func(), error)` in the relevant internal package
-2. Add it to the `wire.Build()` call in `app/wire.go`
-3. Add the field to `Dependencies` in `app/deps.go`
-4. Run `wire ./app/...`
-5. Use the dependency in `app/app.go` `Run()` method
+See [architecture.md](architecture.md) for full details on:
+- Wire dependency graph and data flow
+- Package layout with per-file responsibilities
+- Registry pattern (`internal/` Set vs public Get)
+- How to add a new Wire provider (step-by-step)
+- Regenerating Wire code
 
 ## Build & Test
 
@@ -93,7 +65,8 @@ All env vars use `BUTTERFLY_` prefix. Key separator `.` and `-` are converted to
 
 - Tests use `testing` stdlib + `testify/assert` where helpful
 - Config structs live in `mod/` package
-- Public API packages in `store/`, `config/`, `observe/` delegate to `internal/` implementations
+- Public API packages in `store/`, `config/`, `observe/` delegate to `internal/` via registry
 - Named types for Wire disambiguation (e.g. `store.RedisClients`, `mod.ConfigKey`)
 - Provider functions follow `ProvideXxx` naming convention
 - Cleanup functions returned from providers for resource management
+- `Set*()` never in public packages — only in `internal/.../registry.go`
