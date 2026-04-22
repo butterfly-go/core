@@ -3,15 +3,22 @@ package app
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
+var configFilePath string
+
 func TestMain(m *testing.M) {
-	setup()
-	code := m.Run()
+	code := 1
+	if err := setup(); err != nil {
+		_, _ = os.Stderr.WriteString(err.Error() + "\n")
+	} else {
+		code = m.Run()
+	}
 	teardown()
 	os.Exit(code)
 }
@@ -21,7 +28,30 @@ type testConfig struct {
 
 func (t *testConfig) Print() {}
 
-func setup() {
+func setup() error {
+	configFile, err := os.CreateTemp("", "butterfly-app-test-*.yaml")
+	if err != nil {
+		return err
+	}
+	configFilePath = configFile.Name()
+	_, err = configFile.WriteString("log:\n  level: error\n")
+	if closeErr := configFile.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+
+	if err := os.Setenv("BUTTERFLY_CONFIG_TYPE", "file"); err != nil {
+		return err
+	}
+	if err := os.Setenv("BUTTERFLY_CONFIG_FILE_PATH", configFilePath); err != nil {
+		return err
+	}
+	if err := os.Setenv("BUTTERFLY_TRACING_DISABLE", "true"); err != nil {
+		return err
+	}
+
 	app := New(&Config{
 		Config:  new(testConfig),
 		Service: "test",
@@ -35,10 +65,13 @@ func setup() {
 	})
 	go app.Run()
 	time.Sleep(time.Second * 5)
+	return nil
 }
 
 func teardown() {
-
+	if configFilePath != "" && filepath.IsAbs(configFilePath) {
+		_ = os.Remove(configFilePath)
+	}
 }
 
 func TestRouter(t *testing.T) {

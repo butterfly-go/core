@@ -11,9 +11,13 @@ import (
 
 func Init(cfg mod.LogConfig) {
 	level := parseLevel(cfg.Level)
+	addSource := true
+	if cfg.AddSource != nil {
+		addSource = *cfg.AddSource
+	}
 	opts := &slog.HandlerOptions{
 		Level:     level,
-		AddSource: cfg.AddSource,
+		AddSource: addSource,
 	}
 
 	var handler slog.Handler

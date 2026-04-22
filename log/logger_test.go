@@ -7,6 +7,8 @@ import (
 	"butterfly.orx.me/core/mod"
 )
 
+func boolPtr(b bool) *bool { return &b }
+
 func TestParseLevel(t *testing.T) {
 	tests := []struct {
 		input string
@@ -40,14 +42,14 @@ func TestInit(t *testing.T) {
 	}{
 		{
 			name: "json format with debug level and source",
-			cfg:  mod.LogConfig{Level: "debug", Format: "json", AddSource: true},
+			cfg:  mod.LogConfig{Level: "debug", Format: "json", AddSource: boolPtr(true)},
 		},
 		{
 			name: "text format with error level",
-			cfg:  mod.LogConfig{Level: "error", Format: "text", AddSource: false},
+			cfg:  mod.LogConfig{Level: "error", Format: "text", AddSource: boolPtr(false)},
 		},
 		{
-			name: "default format and level",
+			name: "default format and level (AddSource defaults to true)",
 			cfg:  mod.LogConfig{},
 		},
 		{
