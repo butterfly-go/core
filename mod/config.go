@@ -9,7 +9,7 @@ type CoreConfig struct {
 type LogConfig struct {
 	Level     string `json:"level" yaml:"level"`
 	Format    string `json:"format" yaml:"format"`
-	AddSource bool   `json:"add_source" yaml:"add_source"`
+	AddSource *bool  `json:"add_source" yaml:"add_source"`
 }
 
 type StoreConfig struct {
