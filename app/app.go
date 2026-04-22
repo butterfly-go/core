@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"net"
@@ -12,10 +13,18 @@ import (
 	"butterfly.orx.me/core/internal/observe/metric"
 	"butterfly.orx.me/core/internal/observe/tracing"
 	"butterfly.orx.me/core/internal/runtime"
-	"butterfly.orx.me/core/internal/store"
 	corelog "butterfly.orx.me/core/log"
 	"butterfly.orx.me/core/mod"
+
+	pubconfig "butterfly.orx.me/core/config"
+	pubmongo "butterfly.orx.me/core/store/mongo"
+	pubredis "butterfly.orx.me/core/store/redis"
+	pubs3 "butterfly.orx.me/core/store/s3"
+	pubsqldb "butterfly.orx.me/core/store/sqldb"
+
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
@@ -76,9 +85,12 @@ func (a *App) Run() {
 		panic(err)
 	}
 
-	// Set legacy globals for backward compatibility
-	config.SetLegacy(deps.Config, deps.CoreConfig)
-	store.SetLegacyClients(deps.Redis, deps.Mongo, deps.SQLDB, deps.S3)
+	// Populate public packages for consumer access
+	pubconfig.Set(deps.Config)
+	pubredis.Set(map[string]*redis.Client(deps.Redis))
+	pubmongo.Set(map[string]*mongo.Client(deps.Mongo))
+	pubsqldb.Set(map[string]*sql.DB(deps.SQLDB))
+	pubs3.Set(deps.S3.Clients, deps.S3.Buckets)
 
 	// User-provided init functions
 	for _, fn := range a.config.InitFunc {

@@ -10,12 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// Legacy globals for backward compatibility.
-var (
-	s3Clients = make(map[string]*s3.Client)
-	s3Buckets = make(map[string]string)
-)
-
 // ProvideS3Store creates S3 clients and bucket mappings from config.
 func ProvideS3Store(cc *mod.CoreConfig) (*S3Store, error) {
 	st := &S3Store{
@@ -31,22 +25,6 @@ func ProvideS3Store(cc *mod.CoreConfig) (*S3Store, error) {
 		st.Buckets[k] = v.Bucket
 	}
 	return st, nil
-}
-
-// SetLegacyS3 populates the legacy globals.
-func SetLegacyS3(st *S3Store) {
-	s3Clients = st.Clients
-	s3Buckets = st.Buckets
-}
-
-// GetS3Client returns an S3 client by name from the legacy global.
-func GetS3Client(k string) *s3.Client {
-	return s3Clients[k]
-}
-
-// GetS3Bucket returns an S3 bucket name by key from the legacy global.
-func GetS3Bucket(k string) string {
-	return s3Buckets[k]
 }
 
 func newS3Client(v mod.S3Config) (*s3.Client, error) {

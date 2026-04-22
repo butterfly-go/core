@@ -9,11 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-// Legacy global for backward compatibility.
-var (
-	mongoClients = make(map[string]*mongo.Client)
-	timeout      = 10 * time.Second
-)
+var timeout = 10 * time.Second
 
 // ProvideMongoClients creates MongoDB clients from config.
 func ProvideMongoClients(cc *mod.CoreConfig) (MongoClients, func(), error) {
@@ -34,14 +30,4 @@ func ProvideMongoClients(cc *mod.CoreConfig) (MongoClients, func(), error) {
 		}
 	}
 	return clients, cleanup, nil
-}
-
-// SetLegacyMongoClients populates the legacy global.
-func SetLegacyMongoClients(clients MongoClients) {
-	mongoClients = map[string]*mongo.Client(clients)
-}
-
-// GetMongoClients returns a MongoDB client by name from the legacy global.
-func GetMongoClients(k string) *mongo.Client {
-	return mongoClients[k]
 }

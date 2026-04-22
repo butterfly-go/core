@@ -7,9 +7,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Legacy global for backward compatibility.
-var redisClients = make(map[string]*redis.Client)
-
 // ProvideRedisClients creates Redis clients from config.
 func ProvideRedisClients(cc *mod.CoreConfig) (RedisClients, func(), error) {
 	clients := make(RedisClients)
@@ -35,14 +32,4 @@ func ProvideRedisClients(cc *mod.CoreConfig) (RedisClients, func(), error) {
 		}
 	}
 	return clients, cleanup, nil
-}
-
-// SetLegacyRedisClients populates the legacy global.
-func SetLegacyRedisClients(clients RedisClients) {
-	redisClients = map[string]*redis.Client(clients)
-}
-
-// GetRedisClient returns a Redis client by name from the legacy global.
-func GetRedisClient(k string) *redis.Client {
-	return redisClients[k]
 }

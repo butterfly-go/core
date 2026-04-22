@@ -11,12 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Legacy globals for backward compatibility.
-var (
-	legacyConfig     Config
-	legacyCoreConfig = new(mod.CoreConfig)
-)
-
 // Config is the interface for configuration backends.
 type Config interface {
 	Get(ctx context.Context, key string) ([]byte, error)
@@ -73,22 +67,4 @@ func ProvideCoreConfig(cfg Config, key mod.ConfigKey) (*mod.CoreConfig, error) {
 	logger.Info("core config",
 		"store_mongo", len(cc.Store.Mongo))
 	return cc, nil
-}
-
-// --- Legacy support ---
-
-// SetLegacy populates the legacy global variables for backward compatibility.
-func SetLegacy(cfg Config, cc *mod.CoreConfig) {
-	legacyConfig = cfg
-	legacyCoreConfig = cc
-}
-
-// GetConfig returns the legacy global config backend.
-func GetConfig() Config {
-	return legacyConfig
-}
-
-// CoreConfig returns the legacy global core config.
-func CoreConfig() *mod.CoreConfig {
-	return legacyCoreConfig
 }

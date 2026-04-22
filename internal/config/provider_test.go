@@ -101,25 +101,6 @@ func TestProvideCoreConfig_EmptyConfig(t *testing.T) {
 	}
 }
 
-func TestSetLegacy_And_Getters(t *testing.T) {
-	mock := &mockConfig{data: []byte("hello")}
-	cc := &mod.CoreConfig{
-		Log: mod.LogConfig{Level: "warn"},
-	}
-
-	SetLegacy(mock, cc)
-
-	if GetConfig() != mock {
-		t.Fatal("GetConfig() did not return the config set via SetLegacy")
-	}
-	if CoreConfig() != cc {
-		t.Fatal("CoreConfig() did not return the core config set via SetLegacy")
-	}
-	if CoreConfig().Log.Level != "warn" {
-		t.Fatalf("expected log level warn, got %s", CoreConfig().Log.Level)
-	}
-}
-
 // mockConfig implements Config for testing.
 type mockConfig struct {
 	data []byte

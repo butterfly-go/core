@@ -49,7 +49,7 @@ Key files:
 - `app/wire_gen.go` — generated code (DO NOT EDIT)
 - `app/deps.go` — Dependencies struct
 
-After Wire init, legacy globals are set via `config.SetLegacy()` and `store.SetLegacyClients()` for backward compatibility with public getter packages.
+After Wire init, `app.Run()` populates public packages directly via their `Set()` functions (e.g. `pubredis.Set(...)`, `pubconfig.Set(...)`). The `internal/` packages have no global state — they only contain providers and types.
 
 ### Regenerating Wire Code
 
