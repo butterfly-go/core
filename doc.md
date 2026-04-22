@@ -7,7 +7,7 @@ Butterfly is a lightweight microservice framework designed for the Go language, 
 ## Core Features
 
 - **Configuration Management**: Supports file configuration and Consul configuration center, flexibly controlled through environment variables
-- **Service Runtime**: Provides application lifecycle management with initialization function chain
+- **Service Runtime**: Provides application lifecycle management with Google Wire dependency injection
 - **Transport Layer Support**: 
   - HTTP server (based on Gin framework)
   - gRPC server support (port 9090)
@@ -239,21 +239,34 @@ func setupGRPCServer(s *grpc.Server) {
 }
 ```
 
-### Initialization Function Chain
+### Initialization Flow
 
-The framework uses a function chain pattern to manage the initialization process:
+The framework uses [Google Wire](https://github.com/google/wire) for compile-time dependency injection. On `app.Run()`, the following happens automatically:
 
-```go
-// Built-in initialization order
-1. config.Init()           // Initialize configuration system
-2. app.InitAppConfig()     // Load application configuration
-3. config.CoreConfigInit() // Initialize core configuration
-4. config.LogInit()        // Initialize logging (level, format, source)
-5. metric.Init()           // Initialize Prometheus metrics
-6. tracing.Init()          // Initialize OpenTelemetry tracing
-7. store.Init()            // Initialize storage connections (Redis, SQL, MongoDB, S3)
-8. Custom InitFunc         // User-defined initialization
 ```
+1. Wire DI Phase (compile-time verified dependency graph):
+   ProvideConfig()        → config backend (File or Consul)
+   ProvideCoreConfig()    → parse YAML into *mod.CoreConfig
+   ProvideRedisClients()  → Redis connections (with cleanup)
+   ProvideMongoClients()  → MongoDB connections (with cleanup)
+   ProvideSQLDBClients()  → SQL database connections (with cleanup)
+   ProvideS3Store()       → S3 clients and bucket mappings
+
+2. App config unmarshaling (user-defined Config struct)
+
+3. Side-effect initialization:
+   log.Init()             → configure slog (level, format, source)
+   metric.Init()          → Prometheus metrics + OTEL meter provider
+   tracing.Init()         → OTEL tracing (gRPC or HTTP exporter)
+
+4. Internal registry population (for public package access)
+
+5. Custom InitFunc[]      → user-defined initialization
+
+6. Start HTTP server (:8080) and optionally gRPC server (:9090)
+```
+
+Wire generates the initialization code at compile time (`app/wire_gen.go`), ensuring type-safe dependency resolution and automatic cleanup chaining on errors.
 
 ## HTTP Service
 
@@ -741,642 +754,73 @@ func simpleLogging() {
 }
 ```
 
-## Dependency Injection with Google Wire
+## Internal Dependency Injection Architecture
 
-### Introduction to Wire
+The framework uses [Google Wire](https://github.com/google/wire) internally for compile-time dependency injection. This replaces the previous function-chain initialization system with a type-safe, compile-time verified dependency graph.
 
-Google Wire is a compile-time dependency injection tool for Go. It generates code for dependency injection at build time, making it safer and faster than runtime dependency injection. Wire helps organize your application's dependencies in a clean, maintainable way.
+### Architecture Overview
 
-### Basic Wire Setup
+```
+app/wire.go          → Wire injector definition (build tag: wireinject)
+app/wire_gen.go      → Generated initialization code (DO NOT EDIT)
+app/deps.go          → Dependencies struct holding all injected values
 
-First, add Wire to your project:
+internal/config/     → ProvideConfig(), ProvideCoreConfig() providers
+internal/store/      → ProvideRedisClients(), ProvideMongoClients(), etc.
+internal/store/registry.go   → Set/Get functions for internal state
+internal/config/registry.go  → Set/Get for config backend
+
+store/redis/         → Public API: GetClient(name) only
+store/mongo/         → Public API: GetClient(name) only
+store/sqldb/         → Public API: GetDB(name) only
+store/s3/            → Public API: GetClient(name), GetBucket(name) only
+config/              → Public API: Get(ctx, key) only
+```
+
+### Dependency Graph
+
+Wire resolves dependencies by type at compile time:
+
+```
+mod.ConfigKey
+    → ProvideConfig()        → config.Config (File or Consul backend)
+    → ProvideCoreConfig()    → *mod.CoreConfig (parsed YAML)
+        → ProvideRedisClients()  → store.RedisClients + cleanup
+        → ProvideMongoClients()  → store.MongoClients + cleanup
+        → ProvideSQLDBClients()  → store.SQLDBClients + cleanup
+        → ProvideS3Store()       → *store.S3Store
+```
+
+Wire automatically chains cleanup functions and handles error rollback — if MongoDB initialization fails after Redis succeeds, Redis cleanup runs automatically.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `app/wire.go` | Injector definition — lists all providers in `wire.Build()` |
+| `app/wire_gen.go` | Auto-generated by `wire` CLI — the actual initialization code |
+| `app/deps.go` | `Dependencies` struct with all Wire-injected values |
+| `app/app.go` | `Run()` calls Wire injector, then side-effect init, then servers |
+| `internal/store/types.go` | Named types for Wire disambiguation (`RedisClients`, etc.) |
+| `mod/types.go` | `ConfigKey` type for Wire |
+
+### Regenerating Wire Code
+
+After changing any provider signature or the injector definition:
 
 ```bash
-go get github.com/google/wire
-go get github.com/google/wire/cmd/wire
+go install github.com/google/wire/cmd/wire@latest
+wire ./app/...
 ```
 
-### Wire Provider Functions
-
-Create provider functions that construct your dependencies:
-
-```go
-// internal/wire/providers.go
-package wire
-
-import (
-    "context"
-    "fmt"
-    
-    "butterfly.orx.me/core/store/gorm"
-    "butterfly.orx.me/core/store/redis"
-    "butterfly.orx.me/core/log"
-    "github.com/google/wire"
-    gormDB "gorm.io/gorm"
-    redisClient "github.com/redis/go-redis/v9"
-)
-
-// Database provider
-func ProvideDatabase() (*gormDB.DB, error) {
-    return gorm.NewDB("user:password@tcp(localhost:3306)/myapp?charset=utf8mb4")
-}
-
-// Redis provider  
-func ProvideRedis() *redisClient.Client {
-    return redis.GetClient("cache")
-}
-
-// Logger provider
-func ProvideLogger() *log.Logger {
-    return log.FromContext(context.Background())
-}
-
-// User repository provider
-func ProvideUserRepository(db *gormDB.DB) *UserRepository {
-    return &UserRepository{db: db}
-}
-
-// User service provider
-func ProvideUserService(repo *UserRepository, cache *redisClient.Client, logger *log.Logger) *UserService {
-    return &UserService{
-        repo:   repo,
-        cache:  cache,
-        logger: logger,
-    }
-}
-
-// HTTP handler provider
-func ProvideUserHandler(service *UserService) *UserHandler {
-    return &UserHandler{service: service}
-}
-```
-
-### Service Layer Definitions
-
-```go
-// internal/repository/user.go
-package repository
-
-import (
-    "context"
-    "gorm.io/gorm"
-)
-
-type User struct {
-    gorm.Model
-    Name     string `json:"name"`
-    Email    string `json:"email"`
-    Password string `json:"-"`
-}
-
-type UserRepository struct {
-    db *gorm.DB
-}
-
-func (r *UserRepository) Create(ctx context.Context, user *User) error {
-    return r.db.WithContext(ctx).Create(user).Error
-}
-
-func (r *UserRepository) GetByID(ctx context.Context, id uint) (*User, error) {
-    var user User
-    err := r.db.WithContext(ctx).First(&user, id).Error
-    return &user, err
-}
-
-func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*User, error) {
-    var user User
-    err := r.db.WithContext(ctx).Where("email = ?", email).First(&user).Error
-    return &user, err
-}
-
-func (r *UserRepository) Update(ctx context.Context, user *User) error {
-    return r.db.WithContext(ctx).Save(user).Error
-}
-
-func (r *UserRepository) Delete(ctx context.Context, id uint) error {
-    return r.db.WithContext(ctx).Delete(&User{}, id).Error
-}
-```
-
-```go
-// internal/service/user.go
-package service
-
-import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "time"
-    
-    "butterfly.orx.me/core/log"
-    "github.com/redis/go-redis/v9"
-    "your-app/internal/repository"
-)
-
-type UserService struct {
-    repo   *repository.UserRepository
-    cache  *redis.Client
-    logger *log.Logger
-}
-
-func (s *UserService) CreateUser(ctx context.Context, name, email string) (*repository.User, error) {
-    s.logger.Info("creating user", "email", email)
-    
-    // Check if user exists
-    existing, _ := s.repo.GetByEmail(ctx, email)
-    if existing != nil {
-        return nil, fmt.Errorf("user with email %s already exists", email)
-    }
-    
-    user := &repository.User{
-        Name:  name,
-        Email: email,
-    }
-    
-    if err := s.repo.Create(ctx, user); err != nil {
-        s.logger.Error("failed to create user", "error", err)
-        return nil, err
-    }
-    
-    // Cache the user
-    s.cacheUser(ctx, user)
-    
-    return user, nil
-}
-
-func (s *UserService) GetUser(ctx context.Context, id uint) (*repository.User, error) {
-    // Try cache first
-    if cached := s.getCachedUser(ctx, id); cached != nil {
-        return cached, nil
-    }
-    
-    user, err := s.repo.GetByID(ctx, id)
-    if err != nil {
-        return nil, err
-    }
-    
-    // Cache the result
-    s.cacheUser(ctx, user)
-    
-    return user, nil
-}
-
-func (s *UserService) UpdateUser(ctx context.Context, id uint, name, email string) (*repository.User, error) {
-    user, err := s.repo.GetByID(ctx, id)
-    if err != nil {
-        return nil, err
-    }
-    
-    user.Name = name
-    user.Email = email
-    
-    if err := s.repo.Update(ctx, user); err != nil {
-        return nil, err
-    }
-    
-    // Update cache
-    s.cacheUser(ctx, user)
-    
-    return user, nil
-}
-
-func (s *UserService) DeleteUser(ctx context.Context, id uint) error {
-    if err := s.repo.Delete(ctx, id); err != nil {
-        return err
-    }
-    
-    // Remove from cache
-    s.cache.Del(ctx, fmt.Sprintf("user:%d", id))
-    
-    return nil
-}
-
-func (s *UserService) cacheUser(ctx context.Context, user *repository.User) {
-    if s.cache == nil {
-        return
-    }
-    
-    data, _ := json.Marshal(user)
-    s.cache.Set(ctx, fmt.Sprintf("user:%d", user.ID), data, time.Hour)
-}
-
-func (s *UserService) getCachedUser(ctx context.Context, id uint) *repository.User {
-    if s.cache == nil {
-        return nil
-    }
-    
-    data, err := s.cache.Get(ctx, fmt.Sprintf("user:%d", id)).Result()
-    if err != nil {
-        return nil
-    }
-    
-    var user repository.User
-    if err := json.Unmarshal([]byte(data), &user); err != nil {
-        return nil
-    }
-    
-    return &user
-}
-```
-
-### HTTP Handlers
-
-```go
-// internal/handler/user.go
-package handler
-
-import (
-    "net/http"
-    "strconv"
-    
-    "github.com/gin-gonic/gin"
-    "your-app/internal/service"
-)
-
-type UserHandler struct {
-    service *service.UserService
-}
-
-type CreateUserRequest struct {
-    Name  string `json:"name" binding:"required"`
-    Email string `json:"email" binding:"required,email"`
-}
-
-func (h *UserHandler) CreateUser(c *gin.Context) {
-    var req CreateUserRequest
-    if err := c.ShouldBindJSON(&req); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-        return
-    }
-    
-    user, err := h.service.CreateUser(c.Request.Context(), req.Name, req.Email)
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-        return
-    }
-    
-    c.JSON(http.StatusCreated, user)
-}
-
-func (h *UserHandler) GetUser(c *gin.Context) {
-    idStr := c.Param("id")
-    id, err := strconv.ParseUint(idStr, 10, 32)
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
-        return
-    }
-    
-    user, err := h.service.GetUser(c.Request.Context(), uint(id))
-    if err != nil {
-        c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-        return
-    }
-    
-    c.JSON(http.StatusOK, user)
-}
-
-func (h *UserHandler) UpdateUser(c *gin.Context) {
-    idStr := c.Param("id")
-    id, err := strconv.ParseUint(idStr, 10, 32)
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
-        return
-    }
-    
-    var req CreateUserRequest
-    if err := c.ShouldBindJSON(&req); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-        return
-    }
-    
-    user, err := h.service.UpdateUser(c.Request.Context(), uint(id), req.Name, req.Email)
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-        return
-    }
-    
-    c.JSON(http.StatusOK, user)
-}
-
-func (h *UserHandler) DeleteUser(c *gin.Context) {
-    idStr := c.Param("id")
-    id, err := strconv.ParseUint(idStr, 10, 32)
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
-        return
-    }
-    
-    if err := h.service.DeleteUser(c.Request.Context(), uint(id)); err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-        return
-    }
-    
-    c.JSON(http.StatusNoContent, nil)
-}
-```
-
-### Wire Injector
-
-Create a Wire injector that defines how to assemble your dependencies:
-
-```go
-//go:build wireinject
-// +build wireinject
-
-// cmd/wire.go
-package main
-
-import (
-    "github.com/google/wire"
-    "your-app/internal/wire"
-)
-
-// Wire set that groups all providers
-var AppSet = wire.NewSet(
-    wire.ProvideDatabase,
-    wire.ProvideRedis,
-    wire.ProvideLogger,
-    wire.ProvideUserRepository,
-    wire.ProvideUserService,
-    wire.ProvideUserHandler,
-)
-
-// InitializeApp creates a fully configured application
-func InitializeApp() (*UserHandler, error) {
-    wire.Build(AppSet)
-    return &UserHandler{}, nil
-}
-```
-
-### Generate Wire Code
-
-Create a Makefile or run the command to generate the injector code:
-
-```bash
-# Generate wire code
-cd cmd && wire
-```
-
-This generates `wire_gen.go` with the actual implementation:
-
-```go
-// Code generated by Wire. DO NOT EDIT.
-
-//go:generate go run github.com/google/wire/cmd/wire
-//go:build !wireinject
-// +build !wireinject
-
-package main
-
-import (
-    "your-app/internal/wire"
-)
-
-// Injectors from wire.go:
-
-func InitializeApp() (*UserHandler, error) {
-    db, err := wire.ProvideDatabase()
-    if err != nil {
-        return nil, err
-    }
-    redisClient := wire.ProvideRedis()
-    logger := wire.ProvideLogger()
-    userRepository := wire.ProvideUserRepository(db)
-    userService := wire.ProvideUserService(userRepository, redisClient, logger)
-    userHandler := wire.ProvideUserHandler(userService)
-    return userHandler, nil
-}
-```
-
-### Complete Application with Wire
-
-```go
-// main.go
-package main
-
-import (
-    "butterfly.orx.me/core/app"
-    "github.com/gin-gonic/gin"
-)
-
-func main() {
-    // Initialize dependencies using Wire
-    userHandler, err := InitializeApp()
-    if err != nil {
-        panic(err)
-    }
-    
-    config := &app.Config{
-        Service: "user-service",
-        Router: func(r *gin.Engine) {
-            setupRoutes(r, userHandler)
-        },
-    }
-    
-    application := app.New(config)
-    application.Run()
-}
-
-func setupRoutes(r *gin.Engine, userHandler *UserHandler) {
-    r.GET("/health", func(c *gin.Context) {
-        c.JSON(200, gin.H{"status": "healthy"})
-    })
-    
-    api := r.Group("/api/v1")
-    {
-        api.POST("/users", userHandler.CreateUser)
-        api.GET("/users/:id", userHandler.GetUser)
-        api.PUT("/users/:id", userHandler.UpdateUser)
-        api.DELETE("/users/:id", userHandler.DeleteUser)
-    }
-}
-```
-
-### Advanced Wire Patterns
-
-#### Interface-based Injection
-
-```go
-// Define interfaces for better testability
-type UserRepositoryInterface interface {
-    Create(ctx context.Context, user *User) error
-    GetByID(ctx context.Context, id uint) (*User, error)
-    GetByEmail(ctx context.Context, email string) (*User, error)
-    Update(ctx context.Context, user *User) error
-    Delete(ctx context.Context, id uint) error
-}
-
-type UserServiceInterface interface {
-    CreateUser(ctx context.Context, name, email string) (*User, error)
-    GetUser(ctx context.Context, id uint) (*User, error)
-    UpdateUser(ctx context.Context, id uint, name, email string) (*User, error)
-    DeleteUser(ctx context.Context, id uint) error
-}
-
-// Update providers to return interfaces
-func ProvideUserRepository(db *gorm.DB) UserRepositoryInterface {
-    return &UserRepository{db: db}
-}
-
-func ProvideUserService(repo UserRepositoryInterface, cache *redis.Client, logger *log.Logger) UserServiceInterface {
-    return &UserService{
-        repo:   repo,
-        cache:  cache,
-        logger: logger,
-    }
-}
-```
-
-#### Configuration-based Providers
-
-```go
-// Config structure
-type Config struct {
-    Database struct {
-        Host     string `yaml:"host"`
-        Port     int    `yaml:"port"`
-        User     string `yaml:"user"`
-        Password string `yaml:"password"`
-        DBName   string `yaml:"db_name"`
-    } `yaml:"database"`
-    
-    Redis struct {
-        Addr     string `yaml:"addr"`
-        Password string `yaml:"password"`
-        DB       int    `yaml:"db"`
-    } `yaml:"redis"`
-}
-
-// Config-aware providers
-func ProvideDatabaseFromConfig(cfg *Config) (*gorm.DB, error) {
-    dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4",
-        cfg.Database.User,
-        cfg.Database.Password,
-        cfg.Database.Host,
-        cfg.Database.Port,
-        cfg.Database.DBName,
-    )
-    return gorm.NewDB(dsn)
-}
-
-func ProvideRedisFromConfig(cfg *Config) *redis.Client {
-    return redis.NewClient(&redis.Options{
-        Addr:     cfg.Redis.Addr,
-        Password: cfg.Redis.Password,
-        DB:       cfg.Redis.DB,
-    })
-}
-```
-
-#### Wire with Options Pattern
-
-```go
-// Options for services
-type UserServiceOptions struct {
-    CacheTTL     time.Duration
-    MaxRetries   int
-    EnableAudit  bool
-}
-
-func ProvideUserServiceOptions() *UserServiceOptions {
-    return &UserServiceOptions{
-        CacheTTL:    time.Hour,
-        MaxRetries:  3,
-        EnableAudit: true,
-    }
-}
-
-func ProvideUserServiceWithOptions(
-    repo UserRepositoryInterface,
-    cache *redis.Client,
-    logger *log.Logger,
-    opts *UserServiceOptions,
-) UserServiceInterface {
-    return &UserService{
-        repo:      repo,
-        cache:     cache,
-        logger:    logger,
-        cacheTTL:  opts.CacheTTL,
-        maxRetries: opts.MaxRetries,
-        enableAudit: opts.EnableAudit,
-    }
-}
-```
-
-### Testing with Wire
-
-Wire makes testing easier by allowing you to swap implementations:
-
-```go
-// test/wire_test.go
-//go:build wireinject
-// +build wireinject
-
-package test
-
-import (
-    "github.com/google/wire"
-    "your-app/internal/test/mocks"
-)
-
-// Test wire set with mocked dependencies
-var TestSet = wire.NewSet(
-    mocks.ProvideMockDatabase,
-    mocks.ProvideMockRedis,
-    mocks.ProvideMockLogger,
-    wire.ProvideUserRepository,
-    wire.ProvideUserService,
-    wire.ProvideUserHandler,
-)
-
-func InitializeTestApp() (*UserHandler, error) {
-    wire.Build(TestSet)
-    return &UserHandler{}, nil
-}
-```
-
-### Wire Best Practices
-
-1. **Group Related Providers**: Use `wire.NewSet` to group related providers
-2. **Use Interfaces**: Define interfaces for better testability and flexibility
-3. **Separate Concerns**: Keep providers focused on single responsibilities
-4. **Error Handling**: Always handle errors from providers properly
-5. **Configuration**: Use configuration structs for flexible setup
-6. **Testing**: Create separate Wire sets for testing with mocks
-
-### Integration with Butterfly Framework
-
-Wire integrates seamlessly with the Butterfly framework's initialization system:
-
-```go
-func main() {
-    // Initialize all dependencies with Wire
-    deps, err := InitializeAppDependencies()
-    if err != nil {
-        panic(err)
-    }
-    
-    config := &app.Config{
-        Service: "user-service",
-        Router: func(r *gin.Engine) {
-            setupRoutes(r, deps.UserHandler)
-        },
-        InitFunc: []func() error{
-            deps.InitDatabase,
-            deps.InitCache,
-        },
-        TeardownFunc: []func() error{
-            deps.CloseDatabase,
-            deps.CloseCache,
-        },
-    }
-    
-    application := app.New(config)
-    application.Run()
-}
-```
-
-This approach provides clean separation of concerns, making your application more maintainable and testable.
+### Adding a New Provider
+
+1. Create `ProvideXxx(deps...) (Type, func(), error)` in the relevant `internal/` package
+2. Add the new type to `Dependencies` struct in `app/deps.go`
+3. Add the provider to `wire.Build()` in `app/wire.go`
+4. Run `wire ./app/...` to regenerate
+5. Use the new dependency in `app/app.go` `Run()` method
+6. If needed, add a public getter in a `store/` or `config/` package that reads from the internal registry
 
 ## Practical Examples
 
