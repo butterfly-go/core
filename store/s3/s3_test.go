@@ -3,14 +3,15 @@ package s3
 import (
 	"testing"
 
+	"butterfly.orx.me/core/internal/store"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-func TestSetAndGetClient(t *testing.T) {
-	Set(
-		map[string]*awss3.Client{"assets": {}},
-		map[string]string{"assets": "my-bucket"},
-	)
+func TestGetClient(t *testing.T) {
+	store.SetS3Store(&store.S3Store{
+		Clients: map[string]*awss3.Client{"assets": {}},
+		Buckets: map[string]string{"assets": "my-bucket"},
+	})
 
 	if got := GetClient("assets"); got == nil {
 		t.Fatal("expected non-nil client for 'assets'")
@@ -23,15 +24,5 @@ func TestSetAndGetClient(t *testing.T) {
 	}
 	if got := GetBucket("nonexistent"); got != "" {
 		t.Fatalf("expected empty string, got %s", got)
-	}
-}
-
-func TestGetClient_BeforeSet(t *testing.T) {
-	Set(nil, nil)
-	if got := GetClient("any"); got != nil {
-		t.Fatalf("expected nil before Set, got %v", got)
-	}
-	if got := GetBucket("any"); got != "" {
-		t.Fatalf("expected empty string before Set, got %s", got)
 	}
 }

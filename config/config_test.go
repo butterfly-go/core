@@ -3,6 +3,8 @@ package config
 import (
 	"context"
 	"testing"
+
+	iconfig "butterfly.orx.me/core/internal/config"
 )
 
 type mockBackend struct {
@@ -14,9 +16,9 @@ func (m *mockBackend) Get(_ context.Context, _ string) ([]byte, error) {
 	return m.data, m.err
 }
 
-func TestSetAndGet(t *testing.T) {
+func TestGet(t *testing.T) {
 	mock := &mockBackend{data: []byte("hello: world")}
-	Set(mock)
+	iconfig.SetConfig(mock)
 
 	data, err := Get(context.Background(), "test-key")
 	if err != nil {
@@ -29,7 +31,7 @@ func TestSetAndGet(t *testing.T) {
 
 func TestGet_Error(t *testing.T) {
 	mock := &mockBackend{err: context.DeadlineExceeded}
-	Set(mock)
+	iconfig.SetConfig(mock)
 
 	_, err := Get(context.Background(), "test-key")
 	if err == nil {

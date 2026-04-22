@@ -2,11 +2,14 @@ package sqldb
 
 import (
 	"testing"
+
+	"butterfly.orx.me/core/internal/store"
 )
 
-func TestSetAndGetDB(t *testing.T) {
-	Set(nil)
+func TestGetDB(t *testing.T) {
+	store.SetSQLDBClients(nil)
+
 	if got := GetDB("any"); got != nil {
-		t.Fatalf("expected nil before Set, got %v", got)
+		t.Fatalf("expected nil, got %v", got)
 	}
 }

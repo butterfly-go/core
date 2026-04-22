@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"butterfly.orx.me/core/mod"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 func TestProvideRedisClients_EmptyConfig(t *testing.T) {
@@ -98,5 +99,46 @@ func TestDBConfigToDSN(t *testing.T) {
 	got := DBConfigToDSN(cfg)
 	if got != want {
 		t.Fatalf("DBConfigToDSN() = %q, want %q", got, want)
+	}
+}
+
+func TestRegistry_SetAndGet(t *testing.T) {
+	// Redis
+	SetRedisClients(nil)
+	if got := GetRedisClient("any"); got != nil {
+		t.Fatalf("expected nil redis client, got %v", got)
+	}
+
+	// Mongo
+	SetMongoClients(nil)
+	if got := GetMongoClient("any"); got != nil {
+		t.Fatalf("expected nil mongo client, got %v", got)
+	}
+
+	// SQLDB
+	SetSQLDBClients(nil)
+	if got := GetSQLDB("any"); got != nil {
+		t.Fatalf("expected nil sqldb, got %v", got)
+	}
+
+	// S3
+	SetS3Store(nil)
+	if got := GetS3Client("any"); got != nil {
+		t.Fatalf("expected nil s3 client, got %v", got)
+	}
+	if got := GetS3Bucket("any"); got != "" {
+		t.Fatalf("expected empty bucket, got %s", got)
+	}
+
+	// S3 with data
+	SetS3Store(&S3Store{
+		Clients: map[string]*s3.Client{"assets": {}},
+		Buckets: map[string]string{"assets": "my-bucket"},
+	})
+	if got := GetS3Client("assets"); got == nil {
+		t.Fatal("expected non-nil s3 client")
+	}
+	if got := GetS3Bucket("assets"); got != "my-bucket" {
+		t.Fatalf("expected my-bucket, got %s", got)
 	}
 }

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
 	"net"
@@ -13,18 +12,11 @@ import (
 	"butterfly.orx.me/core/internal/observe/metric"
 	"butterfly.orx.me/core/internal/observe/tracing"
 	"butterfly.orx.me/core/internal/runtime"
+	"butterfly.orx.me/core/internal/store"
 	corelog "butterfly.orx.me/core/log"
 	"butterfly.orx.me/core/mod"
 
-	pubconfig "butterfly.orx.me/core/config"
-	pubmongo "butterfly.orx.me/core/store/mongo"
-	pubredis "butterfly.orx.me/core/store/redis"
-	pubs3 "butterfly.orx.me/core/store/s3"
-	pubsqldb "butterfly.orx.me/core/store/sqldb"
-
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
-	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
@@ -85,12 +77,12 @@ func (a *App) Run() {
 		panic(err)
 	}
 
-	// Populate public packages for consumer access
-	pubconfig.Set(deps.Config)
-	pubredis.Set(map[string]*redis.Client(deps.Redis))
-	pubmongo.Set(map[string]*mongo.Client(deps.Mongo))
-	pubsqldb.Set(map[string]*sql.DB(deps.SQLDB))
-	pubs3.Set(deps.S3.Clients, deps.S3.Buckets)
+	// Populate internal registry for public package access
+	config.SetConfig(deps.Config)
+	store.SetRedisClients(deps.Redis)
+	store.SetMongoClients(deps.Mongo)
+	store.SetSQLDBClients(deps.SQLDB)
+	store.SetS3Store(deps.S3)
 
 	// User-provided init functions
 	for _, fn := range a.config.InitFunc {
@@ -126,14 +118,10 @@ func (a *App) initAppConfig(cfg config.Config) error {
 
 func (a *App) HTTPServer() error {
 	r := gin.New()
-	// Disable log by default
 	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{
 		Output: io.Discard,
 	}))
-
-	// Recovery middleware recovers from any panics and writes a 500 if there was one.
 	r.Use(gin.Recovery())
-
 	r.Use(otelgin.Middleware(a.config.Service))
 	if a.config.Router != nil {
 		a.config.Router(r)
@@ -149,7 +137,6 @@ func (a *App) GRPCServer() {
 	}
 	server := grpc.NewServer()
 	a.config.GRPCRegister(server)
-	// run grpc server
 	log.CoreLogger("grpc").Info("grpc server listening ", "addr", lis.Addr())
 	if err := server.Serve(lis); err != nil {
 		panic(err)

@@ -49,7 +49,7 @@ Key files:
 - `app/wire_gen.go` — generated code (DO NOT EDIT)
 - `app/deps.go` — Dependencies struct
 
-After Wire init, `app.Run()` populates public packages directly via their `Set()` functions (e.g. `pubredis.Set(...)`, `pubconfig.Set(...)`). The `internal/` packages have no global state — they only contain providers and types.
+After Wire init, `app.Run()` populates the internal registry (`internal/store/registry.go`, `internal/config/registry.go`) via `Set*()` functions. Public packages (`store/redis`, `config`, etc.) delegate their `Get*()` calls to the internal registry. The `Set*()` functions are internal-only and not exposed to framework consumers.
 
 ### Regenerating Wire Code
 
