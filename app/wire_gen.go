@@ -7,6 +7,7 @@
 package app
 
 import (
+	"butterfly.orx.me/core/internal/bootstrap"
 	"butterfly.orx.me/core/internal/config"
 	"butterfly.orx.me/core/internal/store"
 	"butterfly.orx.me/core/mod"
@@ -14,7 +15,7 @@ import (
 
 // Injectors from wire.go:
 
-func initDeps(key mod.ConfigKey) (*Dependencies, func(), error) {
+func initDeps(key mod.ConfigKey) (*bootstrap.Dependencies, func(), error) {
 	configConfig, err := config.ProvideConfig()
 	if err != nil {
 		return nil, nil, err
@@ -45,7 +46,7 @@ func initDeps(key mod.ConfigKey) (*Dependencies, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
-	dependencies := &Dependencies{
+	dependencies := &bootstrap.Dependencies{
 		Config:     configConfig,
 		CoreConfig: coreConfig,
 		Redis:      redisClients,

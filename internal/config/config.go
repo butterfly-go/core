@@ -68,3 +68,21 @@ func ProvideCoreConfig(cfg Config, key mod.ConfigKey) (*mod.CoreConfig, error) {
 		"store_mongo", len(cc.Store.Mongo))
 	return cc, nil
 }
+
+// LoadAppConfig reads the application config document and unmarshals it into target.
+func LoadAppConfig(cfg Config, key string, target AppConfig) error {
+	ctx := context.Background()
+	logger := log.CoreLogger("app.init.config")
+	b, err := cfg.Get(ctx, key)
+	if err != nil {
+		logger.Error("get app config error",
+			"key", key,
+			"error", err.Error())
+		return err
+	}
+	if err := yaml.Unmarshal(b, target); err != nil {
+		logger.Error("unmarshal failed", "error", err.Error())
+		return err
+	}
+	return nil
+}
