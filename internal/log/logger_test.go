@@ -60,7 +60,6 @@ func TestInit(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			Init(tt.cfg)
-			// Verify slog.Default() was updated and is usable
 			logger := slog.Default()
 			if logger == nil {
 				t.Fatal("slog.Default() returned nil after Init")

@@ -13,7 +13,6 @@ import (
 	"butterfly.orx.me/core/internal/observe/tracing"
 	"butterfly.orx.me/core/internal/runtime"
 	"butterfly.orx.me/core/internal/store"
-	corelog "butterfly.orx.me/core/log"
 	"butterfly.orx.me/core/mod"
 
 	"github.com/gin-gonic/gin"
@@ -69,7 +68,7 @@ func (a *App) Run() {
 	}
 
 	// Side-effect initialization
-	corelog.Init(deps.CoreConfig.Log)
+	log.Init(deps.CoreConfig.Log)
 	if err := metric.Init(); err != nil {
 		panic(err)
 	}
