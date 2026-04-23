@@ -7,6 +7,7 @@ import (
 
 type Client = redis.Client
 
+// GetClient returns a Redis client by name.
 func GetClient(k string) *redis.Client {
 	return store.GetRedisClient(k)
 }

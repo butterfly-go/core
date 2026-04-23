@@ -1,22 +1,23 @@
 package app
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"slices"
 	"strings"
+	"sync"
 
+	"butterfly.orx.me/core/internal/bootstrap"
 	"butterfly.orx.me/core/internal/config"
 	"butterfly.orx.me/core/internal/log"
-	"butterfly.orx.me/core/internal/observe/metric"
-	"butterfly.orx.me/core/internal/observe/tracing"
-	"butterfly.orx.me/core/internal/runtime"
-	"butterfly.orx.me/core/internal/store"
+	"butterfly.orx.me/core/mod"
+
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"google.golang.org/grpc"
-	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
@@ -29,6 +30,12 @@ type Config struct {
 	TeardownFunc []func() error
 }
 
+// Application is the public lifecycle contract returned by New.
+type Application interface {
+	Run()
+	Close() error
+}
+
 func (c Config) ConfigKey() string {
 	if c.Namespace != "" {
 		return strings.Trim(c.Namespace, "/") + "/" + c.Service
@@ -36,74 +43,92 @@ func (c Config) ConfigKey() string {
 	return c.Service
 }
 
-type App struct {
-	config *Config
+type application struct {
+	config    *Config
+	deps      *bootstrap.Dependencies
+	cleanup   func()
+	closeOnce sync.Once
 }
 
-func New(config *Config) *App {
-	return &App{
+var _ Application = (*application)(nil)
+
+func New(config *Config) Application {
+	return &application{
 		config: config,
 	}
 }
 
-func (a *App) Run() {
-	runtime.SetService(a.config.Service)
-	runtime.SetConfigKey(a.config.ConfigKey())
-
-	appendFn(
-		NewFn(config.Init),
-		NewFn(a.InitAppConfig),
-		NewFn(config.CoreConfigInit),
-		NewFn(config.LogInit),
-		NewFn(metric.Init),
-		NewFn(tracing.Init),
-		NewFn(store.Init),
-	)
-
-	for _, fn := range a.config.InitFunc {
-		appendFn(NewFn(fn))
-	}
-
-	// do func init
-	err := do()
+func (a *application) Run() {
+	// Wire-generated dependency initialization
+	deps, cleanup, err := initDeps(mod.ConfigKey(a.config.ConfigKey()))
 	if err != nil {
 		panic(err)
 	}
+	a.deps = deps
+	a.cleanup = cleanup
+	defer func() {
+		closeErr := a.Close()
+		if r := recover(); r != nil {
+			panic(r)
+		}
+		if closeErr != nil {
+			panic(closeErr)
+		}
+	}()
 
-	if a.config.GRPCRegister != nil {
-		go a.GRPCServer()
+	if err := bootstrap.Init(a.config.Service, a.config.ConfigKey(), a.config.Config, deps); err != nil {
+		panic(err)
 	}
 
-	_ = a.HTTPServer()
+	// User-provided init functions
+	for _, fn := range a.config.InitFunc {
+		if err := fn(); err != nil {
+			panic(err)
+		}
+	}
+
+	// Start servers
+	if a.config.GRPCRegister != nil {
+		go a.grpcServer()
+	}
+
+	if err := a.httpServer(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		panic(err)
+	}
 }
 
-func (a *App) InitAppConfig() error {
-	ctx := context.Background()
-	logger := log.CoreLogger("app.init.config")
-	b, err := config.GetConfig().Get(ctx, a.config.ConfigKey())
-	if err != nil {
-		logger.Error("get app config error",
-			"key", a.config.ConfigKey(),
-			"error", err.Error())
-		return err
-	}
-	err = yaml.Unmarshal(b, a.config.Config)
-	if err != nil {
-		logger.Error("unmarshal failed", "error", err.Error())
-	}
+func (a *application) Close() error {
+	var err error
+	a.closeOnce.Do(func() {
+		var errs []error
+		if a.config != nil {
+			teardowns := slices.Clone(a.config.TeardownFunc)
+			slices.Reverse(teardowns)
+			for _, fn := range teardowns {
+				if fn == nil {
+					continue
+				}
+				if teardownErr := fn(); teardownErr != nil {
+					errs = append(errs, teardownErr)
+				}
+			}
+		}
+		if a.cleanup != nil {
+			a.cleanup()
+			a.cleanup = nil
+		}
+		a.deps = nil
+		err = errors.Join(errs...)
+	})
 	return err
 }
 
-func (a *App) HTTPServer() error {
+func (a *application) httpServer() error {
 	r := gin.New()
-	// Disable log by default
 	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{
 		Output: io.Discard,
 	}))
-
-	// Recovery middleware recovers from any panics and writes a 500 if there was one.
 	r.Use(gin.Recovery())
-
 	r.Use(otelgin.Middleware(a.config.Service))
 	if a.config.Router != nil {
 		a.config.Router(r)
@@ -111,7 +136,7 @@ func (a *App) HTTPServer() error {
 	return r.Run()
 }
 
-func (a *App) GRPCServer() {
+func (a *application) grpcServer() {
 	var port = 9090
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
@@ -119,7 +144,6 @@ func (a *App) GRPCServer() {
 	}
 	server := grpc.NewServer()
 	a.config.GRPCRegister(server)
-	// run grpc server
 	log.CoreLogger("grpc").Info("grpc server listening ", "addr", lis.Addr())
 	if err := server.Serve(lis); err != nil {
 		panic(err)

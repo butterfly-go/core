@@ -3,17 +3,14 @@ package store
 import (
 	"context"
 
-	"butterfly.orx.me/core/internal/config"
+	"butterfly.orx.me/core/mod"
 	"github.com/redis/go-redis/v9"
 )
 
-var (
-	redisClients = make(map[string]*redis.Client)
-)
-
-func InitRedis() error {
-	config := config.CoreConfig().Store.Redis
-	for k, v := range config {
+// ProvideRedisClients creates Redis clients from config.
+func ProvideRedisClients(cc *mod.CoreConfig) (RedisClients, func(), error) {
+	clients := make(RedisClients)
+	for k, v := range cc.Store.Redis {
 		client := redis.NewClient(&redis.Options{
 			Addr:     v.Addr,
 			Password: v.Password,
@@ -21,15 +18,18 @@ func InitRedis() error {
 		})
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		err := client.Ping(ctx).Err()
-		if err != nil {
-			return err
+		if err := client.Ping(ctx).Err(); err != nil {
+			for _, c := range clients {
+				_ = c.Close()
+			}
+			return nil, nil, err
 		}
-		redisClients[k] = client
+		clients[k] = client
 	}
-	return nil
-}
-
-func GetRedisClient(k string) *redis.Client {
-	return redisClients[k]
+	cleanup := func() {
+		for _, c := range clients {
+			_ = c.Close()
+		}
+	}
+	return clients, cleanup, nil
 }

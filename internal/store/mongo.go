@@ -1,39 +1,33 @@
 package store
 
 import (
+	"context"
 	"time"
 
-	"butterfly.orx.me/core/internal/config"
+	"butterfly.orx.me/core/mod"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-var (
-	mongoClients = make(map[string]*mongo.Client)
-	timeout      = 10 * time.Second
-)
+var timeout = 10 * time.Second
 
-func InitMongo() error {
-	config := config.CoreConfig().Store.Mongo
-
-	for k, v := range config {
-		err := setupMongo(k, v.URI)
+// ProvideMongoClients creates MongoDB clients from config.
+func ProvideMongoClients(cc *mod.CoreConfig) (MongoClients, func(), error) {
+	clients := make(MongoClients)
+	for k, v := range cc.Store.Mongo {
+		client, err := mongo.Connect(options.Client().ApplyURI(v.URI))
 		if err != nil {
-			return err
+			for _, c := range clients {
+				_ = c.Disconnect(context.Background())
+			}
+			return nil, nil, err
+		}
+		clients[k] = client
+	}
+	cleanup := func() {
+		for _, c := range clients {
+			_ = c.Disconnect(context.Background())
 		}
 	}
-	return nil
-}
-
-func GetMongoClients(k string) *mongo.Client {
-	return mongoClients[k]
-}
-
-func setupMongo(k, v string) error {
-	client, err := mongo.Connect(options.Client().ApplyURI(v))
-	if err != nil {
-		return err
-	}
-	mongoClients[k] = client
-	return nil
+	return clients, cleanup, nil
 }

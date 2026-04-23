@@ -7,30 +7,21 @@ import (
 
 	"butterfly.orx.me/core/internal/arg"
 	"butterfly.orx.me/core/internal/log"
-	"butterfly.orx.me/core/internal/runtime"
-	corelog "butterfly.orx.me/core/log"
 	"butterfly.orx.me/core/mod"
 	"gopkg.in/yaml.v3"
 )
 
-var (
-	config Config
-
-	coreConfig = new(mod.CoreConfig)
-)
-
+// Config is the interface for configuration backends.
 type Config interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 }
 
-func CoreConfig() *mod.CoreConfig {
-	return coreConfig
-}
-
+// AppConfig is the interface that user application configs must implement.
 type AppConfig interface {
 	Print()
 }
 
+// FileConfig reads configuration from a local file.
 type FileConfig struct {
 	path string
 }
@@ -44,53 +35,54 @@ func NewFileConfig() (*FileConfig, error) {
 }
 
 func (f *FileConfig) Get(_ context.Context, key string) ([]byte, error) {
-	// For file config, ignore key and just read the file
 	return os.ReadFile(f.path)
 }
 
-func Init() error {
+// --- Wire Providers ---
+
+// ProvideConfig creates the config backend based on BUTTERFLY_CONFIG_TYPE env var.
+func ProvideConfig() (Config, error) {
 	configType := arg.String("config.type")
 	if configType == "file" {
-		c, err := NewFileConfig()
-		if err != nil {
-			return err
-		}
-		config = c
-		return nil
+		return NewFileConfig()
 	}
-	c, err := NewConsulConfig()
-	if err != nil {
-		return err
-	}
-	config = c
-	return nil
+	return NewConsulConfig()
 }
 
-func GetConfig() Config {
-	return config
-}
-
-func CoreConfigInit() error {
+// ProvideCoreConfig loads the core configuration from the config backend.
+func ProvideCoreConfig(cfg Config, key mod.ConfigKey) (*mod.CoreConfig, error) {
 	ctx := context.Background()
 	logger := log.CoreLogger("core.config.init")
-	configKey := runtime.ConfigKey()
-	b, err := GetConfig().Get(ctx, configKey)
+	b, err := cfg.Get(ctx, string(key))
+	if err != nil {
+		logger.Error("get core config error",
+			"key", string(key),
+			"error", err.Error())
+		return nil, err
+	}
+	cc := new(mod.CoreConfig)
+	if err := yaml.Unmarshal(b, cc); err != nil {
+		return nil, err
+	}
+	logger.Info("core config",
+		"store_mongo", len(cc.Store.Mongo))
+	return cc, nil
+}
+
+// LoadAppConfig reads the application config document and unmarshals it into target.
+func LoadAppConfig(cfg Config, key string, target AppConfig) error {
+	ctx := context.Background()
+	logger := log.CoreLogger("app.init.config")
+	b, err := cfg.Get(ctx, key)
 	if err != nil {
 		logger.Error("get app config error",
-			"key", configKey,
+			"key", key,
 			"error", err.Error())
 		return err
 	}
-	err = yaml.Unmarshal(b, coreConfig)
-	if err != nil {
+	if err := yaml.Unmarshal(b, target); err != nil {
+		logger.Error("unmarshal failed", "error", err.Error())
 		return err
 	}
-	logger.Info("core config",
-		"store_mongo", len(coreConfig.Store.Mongo))
-	return nil
-}
-
-func LogInit() error {
-	corelog.Init(coreConfig.Log)
 	return nil
 }

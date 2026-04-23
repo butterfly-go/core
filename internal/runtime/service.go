@@ -5,12 +5,13 @@ var (
 	configKey string
 )
 
-func Service() string {
-	return service
+func Init(srv string, key string) {
+	service = srv
+	configKey = key
 }
 
-func SetService(srv string) {
-	service = srv
+func Service() string {
+	return service
 }
 
 func ConfigKey() string {
@@ -18,8 +19,4 @@ func ConfigKey() string {
 		return configKey
 	}
 	return service
-}
-
-func SetConfigKey(key string) {
-	configKey = key
 }
