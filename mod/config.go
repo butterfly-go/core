@@ -41,6 +41,7 @@ type DBConfig struct {
 }
 
 type S3Config struct {
+	Provider        string `yaml:"provider"`
 	Endpoint        string `yaml:"endpoint"`
 	AccessKeyID     string `yaml:"access_key_id"`
 	SecretAccessKey string `yaml:"secret_access_key"`

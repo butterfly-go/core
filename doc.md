@@ -499,6 +499,8 @@ func getUserBySQL(id int) (*User, error) {
 
 ### S3-Compatible Object Storage
 
+AWS SDK client example:
+
 ```go
 import (
     "butterfly.orx.me/core/store/s3"
@@ -519,7 +521,7 @@ func getAssetsBucket() string {
 func uploadFile(ctx context.Context, key string, body io.Reader) error {
     client := getAssetsClient()
     bucket := getAssetsBucket()
-    
+
     _, err := client.PutObject(ctx, &awss3.PutObjectInput{
         Bucket: &bucket,
         Key:    &key,
@@ -529,12 +531,26 @@ func uploadFile(ctx context.Context, key string, body io.Reader) error {
 }
 ```
 
-Configuration supports AWS S3 and S3-compatible services (MinIO, etc.):
+MinIO SDK client example:
+
+```go
+import (
+    "butterfly.orx.me/core/store/s3"
+    minio "github.com/minio/minio-go/v7"
+)
+
+func getLocalMinIOClient() *minio.Client {
+    return s3.GetMinIOClient("local")
+}
+```
+
+Configuration supports both AWS SDK and MinIO SDK creation:
 
 ```yaml
 store:
   s3:
     assets:
+      provider: "aws"           # optional, default is aws
       endpoint: "s3.amazonaws.com"
       access_key_id: "AKIAIOSFODNN7EXAMPLE"
       secret_access_key: "wJalrXUtnFEMI/K7MDENG"
@@ -544,13 +560,14 @@ store:
       use_path_style: false
     # MinIO example
     local:
-      endpoint: "localhost:9000"
-      ak: "minioadmin"           # shorthand for access_key_id
-      sk: "minioadmin"           # shorthand for secret_access_key
+      provider: "minio"
+      endpoint: "localhost:9000" # also supports http:// or https:// prefix
+      ak: "minioadmin"            # shorthand for access_key_id
+      sk: "minioadmin"            # shorthand for secret_access_key
       region: "us-east-1"
       bucket: "local-bucket"
       use_ssl: false
-      use_path_style: true       # required for MinIO
+      use_path_style: true
 ```
 
 ## Observability
