@@ -33,11 +33,13 @@ type RedisConfig struct {
 }
 
 type DBConfig struct {
+	Driver   string `yaml:"driver"`
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
 	User     string `yaml:"user"`
 	Password string `yaml:"password"`
 	DBName   string `yaml:"db_name"`
+	SSLMode  string `yaml:"ssl_mode"`
 }
 
 type S3Config struct {
