@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"butterfly.orx.me/core/internal/config"
 	"butterfly.orx.me/core/mod"
@@ -42,7 +42,7 @@ func setupSQLDB(k string, v mod.DBConfig) error {
 func buildDriverDSN(v mod.DBConfig) (driver, dsn string) {
 	switch v.Driver {
 	case "postgres", "postgresql":
-		return "postgres", pgConfigToDSN(v)
+		return "pgx", pgConfigToDSN(v)
 	default:
 		return "mysql", mysqlConfigToDSN(v)
 	}
@@ -58,6 +58,6 @@ func pgConfigToDSN(v mod.DBConfig) string {
 	if sslMode == "" {
 		sslMode = "disable"
 	}
-	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		v.Host, v.Port, v.User, v.Password, v.DBName, sslMode)
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		v.User, v.Password, v.Host, v.Port, v.DBName, sslMode)
 }
