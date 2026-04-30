@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 
+	_ "github.com/lib/pq"
+
 	"butterfly.orx.me/core/internal/config"
 	"butterfly.orx.me/core/mod"
 )
@@ -28,7 +30,8 @@ func GetSQLDB(k string) *sql.DB {
 }
 
 func setupSQLDB(k string, v mod.DBConfig) error {
-	db, err := sql.Open("mysql", dbConfigToDSN(v))
+	driver, dsn := buildDriverDSN(v)
+	db, err := sql.Open(driver, dsn)
 	if err != nil {
 		return err
 	}
@@ -36,7 +39,25 @@ func setupSQLDB(k string, v mod.DBConfig) error {
 	return nil
 }
 
-func dbConfigToDSN(v mod.DBConfig) string {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local", v.User, v.Password, v.Host, v.Port, v.DBName)
-	return dsn
+func buildDriverDSN(v mod.DBConfig) (driver, dsn string) {
+	switch v.Driver {
+	case "postgres", "postgresql":
+		return "postgres", pgConfigToDSN(v)
+	default:
+		return "mysql", mysqlConfigToDSN(v)
+	}
+}
+
+func mysqlConfigToDSN(v mod.DBConfig) string {
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		v.User, v.Password, v.Host, v.Port, v.DBName)
+}
+
+func pgConfigToDSN(v mod.DBConfig) string {
+	sslMode := v.SSLMode
+	if sslMode == "" {
+		sslMode = "disable"
+	}
+	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		v.Host, v.Port, v.User, v.Password, v.DBName, sslMode)
 }
