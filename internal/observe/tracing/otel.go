@@ -6,7 +6,9 @@ import (
 	"log/slog"
 
 	"butterfly.orx.me/core/internal/arg"
+	"butterfly.orx.me/core/internal/config"
 	"butterfly.orx.me/core/internal/runtime"
+	"butterfly.orx.me/core/mod"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -75,8 +77,9 @@ func Init() error {
 	// Register the trace exporter with a TracerProvider, using a batch
 	// span processor to aggregate spans before export.
 	bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
+	sampler := traceSamplerFromConfig(config.CoreConfig().Otel)
 	tracerProvider := sdktrace.NewTracerProvider(
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSampler(sampler),
 		sdktrace.WithResource(res),
 		sdktrace.WithSpanProcessor(bsp),
 	)
@@ -85,6 +88,20 @@ func Init() error {
 	// set global propagator to tracecontext (the default is no-op).
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
-	// Shutdown will flush any remaining spans and shut down the exporter.
-	return err
+	return nil
+}
+
+func traceSamplerFromConfig(cfg mod.OtelConfig) sdktrace.Sampler {
+	ratio := 1.0
+	if cfg.TraceSampleRatio != nil {
+		ratio = *cfg.TraceSampleRatio
+	}
+	switch {
+	case ratio <= 0:
+		return sdktrace.NeverSample()
+	case ratio >= 1:
+		return sdktrace.AlwaysSample()
+	default:
+		return sdktrace.ParentBased(sdktrace.TraceIDRatioBased(ratio))
+	}
 }

@@ -20,6 +20,11 @@ type StoreConfig struct {
 }
 
 type OtelConfig struct {
+	// TraceSampleRatio is the fraction of root spans to record when tracing
+	// is enabled. Valid range is 0.0–1.0. When nil or >= 1, all spans are
+	// kept (AlwaysSample). When <= 0, no spans are recorded (NeverSample).
+	// Values between 0 and 1 use ParentBased(TraceIDRatioBased(ratio)).
+	TraceSampleRatio *float64 `yaml:"trace_sample_ratio"`
 }
 
 type MongoConfig struct {
