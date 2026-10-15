@@ -2,7 +2,7 @@ package metric
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 
 	prom "github.com/prometheus/client_golang/prometheus"
@@ -27,7 +27,7 @@ func Init() error {
 	// both a Reader and Collector.
 	exporter, err := prometheus.New(prometheus.WithRegisterer(registry))
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("create prometheus exporter: %w", err)
 	}
 
 	// Add go runtime metrics and process collectors.
@@ -44,14 +44,14 @@ func Init() error {
 }
 
 func serveMetrics() {
-	log.Printf("serving metrics at localhost:2223/metrics")
+	slog.Info("serving metrics", "addr", "localhost:2223", "path", "/metrics")
 	http.Handle("/metrics", promhttp.InstrumentMetricHandler(
 		registry,
 		promhttp.HandlerFor(registry, promhttp.HandlerOpts{})),
 	)
 	err := http.ListenAndServe(":2223", nil) //nolint:gosec // Ignoring G114: Use of net/http serve function that has no support for setting timeouts.
 	if err != nil {
-		fmt.Printf("error serving http: %v", err)
+		slog.Error("error serving metrics", "error", err.Error())
 		return
 	}
 }

@@ -1,129 +1,103 @@
 package gorm
 
 import (
-	"time"
-
 	// mysql driver
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/XSAM/otelsql"
+	mysqldriver "github.com/go-sql-driver/mysql"
+	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"gorm.io/plugin/opentelemetry/tracing"
+
+	"butterfly.orx.me/core/internal/log"
 )
 
+// Type aliases re-exported from gorm so callers do not need to import
+// gorm.io/gorm directly. Only the commonly used surface is exported on
+// purpose; add more here when a real use case appears.
 type (
-	DB     = gorm.DB
+	// DB is gorm.DB.
+	DB = gorm.DB
+	// Config is gorm.Config.
 	Config = gorm.Config
+	// Option is gorm.Option.
 	Option = gorm.Option
+	// Session is gorm.Session.
+	Session = gorm.Session
+	// Tx is gorm.Tx.
+	Tx = gorm.Tx
 
-	Session   = gorm.Session
-	Model     = gorm.Model
+	// Model is gorm.Model (ID, CreatedAt, UpdatedAt, DeletedAt).
+	Model = gorm.Model
+	// DeletedAt is gorm.DeletedAt, used for soft delete.
 	DeletedAt = gorm.DeletedAt
 
-	Association       = gorm.Association
-	Statement         = gorm.Statement
-	StatementModifier = gorm.StatementModifier
+	// Dialector is gorm.Dialector.
+	Dialector = gorm.Dialector
+	// Plugin is gorm.Plugin.
+	Plugin = gorm.Plugin
 
-	Dialector                     = gorm.Dialector
-	Plugin                        = gorm.Plugin
-	ParamsFilter                  = gorm.ParamsFilter
-	ConnPool                      = gorm.ConnPool
-	SavePointerDialectorInterface = gorm.SavePointerDialectorInterface
-	TxBeginner                    = gorm.TxBeginner
-	ConnPoolBeginner              = gorm.ConnPoolBeginner
-	TxCommitter                   = gorm.TxCommitter
-	Tx                            = gorm.Tx
-	Valuer                        = gorm.Valuer
-	GetDBConnector                = gorm.GetDBConnector
-	Rows                          = gorm.Rows
-	ErrorTranslator               = gorm.ErrorTranslator
-
-	PreparedStmtDB = gorm.PreparedStmtDB
-	PreparedStmtTX = gorm.PreparedStmtTX
-	ScanMode       = gorm.ScanMode
-
-	SoftDeleteQueryClause  = gorm.SoftDeleteQueryClause
-	SoftDeleteUpdateClause = gorm.SoftDeleteUpdateClause
-	SoftDeleteDeleteClause = gorm.SoftDeleteDeleteClause
-
-	ViewOption = gorm.ViewOption
-	ColumnType = gorm.ColumnType
-	Index      = gorm.Index
-	TableType  = gorm.TableType
-	Migrator   = gorm.Migrator
-
-	Interface[T any]                  = gorm.Interface[T]
-	CreateInterface[T any]            = gorm.CreateInterface[T]
-	ChainInterface[T any]             = gorm.ChainInterface[T]
-	SetUpdateOnlyInterface[T any]     = gorm.SetUpdateOnlyInterface[T]
-	SetCreateOrUpdateInterface[T any] = gorm.SetCreateOrUpdateInterface[T]
-	ExecInterface[T any]              = gorm.ExecInterface[T]
-	JoinBuilder                       = gorm.JoinBuilder
-	PreloadBuilder                    = gorm.PreloadBuilder
+	// Interface is the generics API returned by G.
+	Interface[T any] = gorm.Interface[T]
 )
 
-const (
-	ScanInitialized         = gorm.ScanInitialized
-	ScanUpdate              = gorm.ScanUpdate
-	ScanOnConflictDoNothing = gorm.ScanOnConflictDoNothing
-)
-
+// Common gorm errors, for use with errors.Is.
 var (
-	ErrRecordNotFound                = gorm.ErrRecordNotFound
-	ErrInvalidTransaction            = gorm.ErrInvalidTransaction
-	ErrNotImplemented                = gorm.ErrNotImplemented
-	ErrMissingWhereClause            = gorm.ErrMissingWhereClause
-	ErrUnsupportedRelation           = gorm.ErrUnsupportedRelation
-	ErrPrimaryKeyRequired            = gorm.ErrPrimaryKeyRequired
-	ErrModelValueRequired            = gorm.ErrModelValueRequired
-	ErrModelAccessibleFieldsRequired = gorm.ErrModelAccessibleFieldsRequired
-	ErrSubQueryRequired              = gorm.ErrSubQueryRequired
-	ErrInvalidData                   = gorm.ErrInvalidData
-	ErrUnsupportedDriver             = gorm.ErrUnsupportedDriver
-	ErrRegistered                    = gorm.ErrRegistered
-	ErrInvalidField                  = gorm.ErrInvalidField
-	ErrEmptySlice                    = gorm.ErrEmptySlice
-	ErrDryRunModeUnsupported         = gorm.ErrDryRunModeUnsupported
-	ErrInvalidDB                     = gorm.ErrInvalidDB
-	ErrInvalidValue                  = gorm.ErrInvalidValue
-	ErrInvalidValueOfLength          = gorm.ErrInvalidValueOfLength
-	ErrPreloadNotAllowed             = gorm.ErrPreloadNotAllowed
-	ErrDuplicatedKey                 = gorm.ErrDuplicatedKey
-	ErrForeignKeyViolated            = gorm.ErrForeignKeyViolated
-	ErrCheckConstraintViolated       = gorm.ErrCheckConstraintViolated
+	ErrRecordNotFound          = gorm.ErrRecordNotFound
+	ErrDuplicatedKey           = gorm.ErrDuplicatedKey
+	ErrForeignKeyViolated      = gorm.ErrForeignKeyViolated
+	ErrCheckConstraintViolated = gorm.ErrCheckConstraintViolated
+	ErrInvalidTransaction      = gorm.ErrInvalidTransaction
+	ErrMissingWhereClause      = gorm.ErrMissingWhereClause
+	ErrNotImplemented          = gorm.ErrNotImplemented
 )
 
-func Open(dialector Dialector, opts ...Option) (*DB, error) {
-	return gorm.Open(dialector, opts...)
-}
-
-func Expr(expr string, args ...interface{}) clause.Expr {
+// Expr builds a raw SQL expression, see gorm.Expr.
+func Expr(expr string, args ...any) clause.Expr {
 	return gorm.Expr(expr, args...)
 }
 
-func Scan(rows Rows, db *DB, mode ScanMode) {
-	gorm.Scan(rows, db, mode)
-}
-
-func NewPreparedStmtDB(connPool ConnPool, maxSize int, ttl time.Duration) *PreparedStmtDB {
-	return gorm.NewPreparedStmtDB(connPool, maxSize, ttl)
-}
-
+// G returns the generics API for type T, see gorm.G.
+// Requires gorm >= 1.30.
 func G[T any](db *DB, opts ...clause.Expression) Interface[T] {
 	return gorm.G[T](db, opts...)
 }
 
-// NewDB
-// MySQL only for now
+// NOTE: gorm.Open is intentionally not re-exported. Use NewDB, which installs
+// the tracing plugin and registers DB stats metrics.
+
+// NewDB opens a MySQL connection with tracing and DB stats metrics enabled.
+// MySQL only for now.
 func NewDB(dsn string) (*DB, error) {
+	logger := log.CoreLogger("store.gorm")
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
+		logger.Error("open gorm db failed", "driver", "mysql", "error", err.Error())
 		return nil, err
 	}
 
 	if err := db.Use(tracing.NewPlugin()); err != nil {
+		logger.Error("install gorm tracing plugin failed", "driver", "mysql", "error", err.Error())
 		return nil, err
 	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		logger.Error("get gorm sql db failed", "driver", "mysql", "error", err.Error())
+		return nil, err
+	}
+	attrs := []attribute.KeyValue{semconv.DBSystemNameMySQL}
+	if cfg, perr := mysqldriver.ParseDSN(dsn); perr == nil && cfg.DBName != "" {
+		attrs = append(attrs, semconv.DBNamespace(cfg.DBName))
+	}
+	if _, err := otelsql.RegisterDBStatsMetrics(sqlDB, otelsql.WithAttributes(attrs...)); err != nil {
+		logger.Error("register gorm db stats metrics failed", "driver", "mysql", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Info("initialize gorm db", "driver", "mysql")
 	return db, nil
 }
 
