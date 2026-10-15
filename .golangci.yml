@@ -13,7 +13,6 @@ linters:
     - errcheck
     - copyloopvar
     - govet
-    - gosimple
     - goconst
     - mnd
     - gocyclo
@@ -22,7 +21,6 @@ linters:
     - prealloc
     - revive
     - staticcheck
-    - typecheck
     # - unused
     - unconvert
     - whitespace
@@ -32,6 +30,10 @@ linters:
       - path: '(.+)_test\.go'
         linters:
           - goconst
+      # doc-comment style rules are not enforced in this repo
+      - linters:
+          - revive
+        text: '(exported|package-comments|blank-imports)'
   settings:
     whitespace:
       multi-func: true
