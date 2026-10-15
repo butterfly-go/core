@@ -1,6 +1,9 @@
 package log
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"log/slog"
 	"testing"
 
@@ -68,4 +71,61 @@ func TestInit(t *testing.T) {
 			logger.Info("test message", "test_key", "test_value")
 		})
 	}
+}
+
+func TestFromContext(t *testing.T) {
+	t.Run("nil context uses default", func(t *testing.T) {
+		def := slog.Default()
+		//nolint:staticcheck // SA1012: nil context is intentionally passed to verify the fallback
+		got := FromContext(nil)
+		if got != def {
+			t.Fatalf("FromContext(nil) = %p, want default %p", got, def)
+		}
+	})
+
+	t.Run("empty context uses default", func(t *testing.T) {
+		def := slog.Default()
+		got := FromContext(context.Background())
+		if got != def {
+			t.Fatalf("FromContext(bg) = %p, want default %p", got, def)
+		}
+	})
+
+	t.Run("returns logger attached with WithLogger", func(t *testing.T) {
+		var buf bytes.Buffer
+		h := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+		custom := slog.New(h)
+		ctx := WithLogger(context.Background(), custom)
+		FromContext(ctx).Info("hello", "k", "v")
+		var m map[string]any
+		if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
+			t.Fatalf("log line: %q", buf.String())
+		}
+		if m["msg"] != "hello" || m["k"] != "v" {
+			t.Fatalf("unexpected payload: %v", m)
+		}
+	})
+
+	t.Run("returns the exact logger attached", func(t *testing.T) {
+		custom := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
+		if got := FromContext(WithLogger(context.Background(), custom)); got != custom {
+			t.Fatalf("FromContext = %p, want %p", got, custom)
+		}
+	})
+
+	t.Run("nil logger attached uses default", func(t *testing.T) {
+		def := slog.Default()
+		ctx := WithLogger(context.Background(), nil)
+		if got := FromContext(ctx); got != def {
+			t.Fatalf("FromContext = %p, want default %p", got, def)
+		}
+	})
+
+	t.Run("value of unexpected type uses default", func(t *testing.T) {
+		def := slog.Default()
+		ctx := context.WithValue(context.Background(), loggerContextKey{}, "not a logger")
+		if got := FromContext(ctx); got != def {
+			t.Fatalf("FromContext = %p, want default %p", got, def)
+		}
+	})
 }
