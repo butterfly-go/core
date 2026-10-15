@@ -76,6 +76,7 @@ func TestInit(t *testing.T) {
 func TestFromContext(t *testing.T) {
 	t.Run("nil context uses default", func(t *testing.T) {
 		def := slog.Default()
+		//nolint:staticcheck // SA1012: nil context is intentionally passed to verify the fallback
 		got := FromContext(nil)
 		if got != def {
 			t.Fatalf("FromContext(nil) = %p, want default %p", got, def)
@@ -102,6 +103,29 @@ func TestFromContext(t *testing.T) {
 		}
 		if m["msg"] != "hello" || m["k"] != "v" {
 			t.Fatalf("unexpected payload: %v", m)
+		}
+	})
+
+	t.Run("returns the exact logger attached", func(t *testing.T) {
+		custom := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
+		if got := FromContext(WithLogger(context.Background(), custom)); got != custom {
+			t.Fatalf("FromContext = %p, want %p", got, custom)
+		}
+	})
+
+	t.Run("nil logger attached uses default", func(t *testing.T) {
+		def := slog.Default()
+		ctx := WithLogger(context.Background(), nil)
+		if got := FromContext(ctx); got != def {
+			t.Fatalf("FromContext = %p, want default %p", got, def)
+		}
+	})
+
+	t.Run("value of unexpected type uses default", func(t *testing.T) {
+		def := slog.Default()
+		ctx := context.WithValue(context.Background(), loggerContextKey{}, "not a logger")
+		if got := FromContext(ctx); got != def {
+			t.Fatalf("FromContext = %p, want default %p", got, def)
 		}
 	})
 }
