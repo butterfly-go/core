@@ -10,6 +10,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/aws/aws-sdk-go-v2/otelaws"
 )
 
 var (
@@ -75,6 +76,13 @@ func newS3Client(name string, v mod.S3Config) (*s3.Client, error) {
 		)),
 	)
 	if err != nil {
+		logger.Error("load s3 aws config failed",
+			"name", name,
+			"endpoint", v.Endpoint,
+			"region", region,
+			"bucket", v.Bucket,
+			"error", err.Error(),
+		)
 		return nil, err
 	}
 
@@ -91,5 +99,6 @@ func newS3Client(name string, v mod.S3Config) (*s3.Client, error) {
 			}
 			o.BaseEndpoint = &endpoint
 		}
+		otelaws.AppendMiddlewares(&o.APIOptions)
 	}), nil
 }
