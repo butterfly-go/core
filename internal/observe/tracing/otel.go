@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 
 	"butterfly.orx.me/core/internal/arg"
 	"butterfly.orx.me/core/internal/config"
@@ -97,6 +98,9 @@ func traceSamplerFromConfig(cfg mod.OtelConfig) sdktrace.Sampler {
 		ratio = *cfg.TraceSampleRatio
 	}
 	switch {
+	case math.IsNaN(ratio):
+		// Invalid value: fall back to the default (sample everything).
+		return sdktrace.AlwaysSample()
 	case ratio <= 0:
 		return sdktrace.NeverSample()
 	case ratio >= 1:
