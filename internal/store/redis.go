@@ -25,11 +25,13 @@ func InitRedis() error {
 		})
 
 		if err := redisotel.InstrumentTracing(client); err != nil {
+			_ = client.Close()
 			logger.Error("instrument redis tracing failed", "name", k, "addr", v.Addr, "db", v.DB, "error", err.Error())
 			return fmt.Errorf("instrument redis tracing %q: %w", k, err)
 		}
 
 		if err := redisotel.InstrumentMetrics(client); err != nil {
+			_ = client.Close()
 			logger.Error("instrument redis metrics failed", "name", k, "addr", v.Addr, "db", v.DB, "error", err.Error())
 			return fmt.Errorf("instrument redis metrics %q: %w", k, err)
 		}
@@ -38,6 +40,7 @@ func InitRedis() error {
 		err := client.Ping(ctx).Err()
 		cancel()
 		if err != nil {
+			_ = client.Close()
 			logger.Error("ping redis failed", "name", k, "addr", v.Addr, "db", v.DB, "error", err.Error())
 			return fmt.Errorf("ping redis %q: %w", k, err)
 		}

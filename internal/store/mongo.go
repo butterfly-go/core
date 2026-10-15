@@ -44,9 +44,10 @@ func setupMongo(k, uri string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	// Ping is best-effort: mongo.Connect does not connect eagerly, so an
+	// unreachable server must not prevent the service from starting.
 	if err := client.Ping(ctx, nil); err != nil {
-		logger.Error("ping mongo failed", "name", k, "error", err.Error())
-		return fmt.Errorf("ping mongo %q: %w", k, err)
+		logger.Warn("ping mongo failed", "name", k, "error", err.Error())
 	}
 
 	logger.Info("initialize mongo client", "name", k)

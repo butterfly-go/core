@@ -7,6 +7,7 @@ import (
 
 	"github.com/XSAM/otelsql"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 
 	"butterfly.orx.me/core/internal/config"
@@ -38,7 +39,7 @@ func setupSQLDB(k string, v mod.DBConfig) error {
 	driver, dsn := buildDriverDSN(v)
 	db, err := otelsql.Open(driver, dsn,
 		otelsql.WithAttributes(
-			semconv.DBSystemNameKey.String(driver),
+			dbSystemName(driver),
 			semconv.DBNamespace(v.DBName),
 		),
 	)
@@ -49,19 +50,33 @@ func setupSQLDB(k string, v mod.DBConfig) error {
 
 	if _, err := otelsql.RegisterDBStatsMetrics(db); err != nil {
 		logger.Error("register sql db stats metrics failed", "name", k, "driver", driver, "database", v.DBName, "error", err.Error())
+		_ = db.Close()
 		return fmt.Errorf("register sql db stats metrics %q: %w", k, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	// Ping is best-effort: sql.Open never connects eagerly, so an unreachable
+	// database must not prevent the service from starting.
 	if err := db.PingContext(ctx); err != nil {
-		logger.Error("ping sql db failed", "name", k, "driver", driver, "host", v.Host, "port", v.Port, "database", v.DBName, "error", err.Error())
-		return fmt.Errorf("ping sql db %q: %w", k, err)
+		logger.Warn("ping sql db failed", "name", k, "driver", driver, "host", v.Host, "port", v.Port, "database", v.DBName, "error", err.Error())
 	}
 
 	logger.Info("initialize sql db", "name", k, "driver", driver, "host", v.Host, "port", v.Port, "database", v.DBName)
 	sqldbClients[k] = db
 	return nil
+}
+
+// dbSystemName maps a database/sql driver name to the OTel db.system.name attribute.
+func dbSystemName(driver string) attribute.KeyValue {
+	switch driver {
+	case "pgx":
+		return semconv.DBSystemNamePostgreSQL
+	case "mysql":
+		return semconv.DBSystemNameMySQL
+	default:
+		return semconv.DBSystemNameKey.String(driver)
+	}
 }
 
 func buildDriverDSN(v mod.DBConfig) (driver, dsn string) {

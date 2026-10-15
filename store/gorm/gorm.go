@@ -3,7 +3,9 @@ package gorm
 import (
 	// mysql driver
 	"github.com/XSAM/otelsql"
-	_ "github.com/go-sql-driver/mysql"
+	mysqldriver "github.com/go-sql-driver/mysql"
+	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/plugin/opentelemetry/tracing"
@@ -37,7 +39,11 @@ func NewDB(dsn string) (*DB, error) {
 		logger.Error("get gorm sql db failed", "driver", "mysql", "error", err.Error())
 		return nil, err
 	}
-	if _, err := otelsql.RegisterDBStatsMetrics(sqlDB); err != nil {
+	attrs := []attribute.KeyValue{semconv.DBSystemNameMySQL}
+	if cfg, perr := mysqldriver.ParseDSN(dsn); perr == nil && cfg.DBName != "" {
+		attrs = append(attrs, semconv.DBNamespace(cfg.DBName))
+	}
+	if _, err := otelsql.RegisterDBStatsMetrics(sqlDB, otelsql.WithAttributes(attrs...)); err != nil {
 		logger.Error("register gorm db stats metrics failed", "driver", "mysql", "error", err.Error())
 		return nil, err
 	}
