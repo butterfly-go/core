@@ -13,16 +13,65 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/plugin/opentelemetry/tracing"
 
 	"butterfly.orx.me/core/internal/log"
 )
 
-type DB = gorm.DB
+// Type aliases re-exported from gorm so callers do not need to import
+// gorm.io/gorm directly. Only the commonly used surface is exported on
+// purpose; add more here when a real use case appears.
+type (
+	// DB is gorm.DB.
+	DB = gorm.DB
+	// Config is gorm.Config.
+	Config = gorm.Config
+	// Option is gorm.Option.
+	Option = gorm.Option
+	// Session is gorm.Session.
+	Session = gorm.Session
+	// Tx is gorm.Tx.
+	Tx = gorm.Tx
 
-type Session = gorm.Session
+	// Model is gorm.Model (ID, CreatedAt, UpdatedAt, DeletedAt).
+	Model = gorm.Model
+	// DeletedAt is gorm.DeletedAt, used for soft delete.
+	DeletedAt = gorm.DeletedAt
 
-type Tx = gorm.Tx
+	// Dialector is gorm.Dialector.
+	Dialector = gorm.Dialector
+	// Plugin is gorm.Plugin.
+	Plugin = gorm.Plugin
+
+	// Interface is the generics API returned by G.
+	Interface[T any] = gorm.Interface[T]
+)
+
+// Common gorm errors, for use with errors.Is.
+var (
+	ErrRecordNotFound          = gorm.ErrRecordNotFound
+	ErrDuplicatedKey           = gorm.ErrDuplicatedKey
+	ErrForeignKeyViolated      = gorm.ErrForeignKeyViolated
+	ErrCheckConstraintViolated = gorm.ErrCheckConstraintViolated
+	ErrInvalidTransaction      = gorm.ErrInvalidTransaction
+	ErrMissingWhereClause      = gorm.ErrMissingWhereClause
+	ErrNotImplemented          = gorm.ErrNotImplemented
+)
+
+// Expr builds a raw SQL expression, see gorm.Expr.
+func Expr(expr string, args ...any) clause.Expr {
+	return gorm.Expr(expr, args...)
+}
+
+// G returns the generics API for type T, see gorm.G.
+// Requires gorm >= 1.30.
+func G[T any](db *DB, opts ...clause.Expression) Interface[T] {
+	return gorm.G[T](db, opts...)
+}
+
+// NOTE: gorm.Open is intentionally not re-exported. Use NewDB, which installs
+// the tracing plugin and registers DB stats metrics.
 
 var (
 	gormDBs   = make(map[string]*DB)
@@ -56,8 +105,8 @@ func RegisterFromSQL(name string, sqlDB *sql.DB) error {
 	return nil
 }
 
-// NewDB
-// MySQL only for now
+// NewDB opens a MySQL connection with tracing and DB stats metrics enabled.
+// MySQL only for now.
 func NewDB(dsn string) (*DB, error) {
 	logger := log.CoreLogger("store.gorm")
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
