@@ -9,6 +9,10 @@ func Init() error {
 	if err != nil {
 		return err
 	}
+	err = InitGORM()
+	if err != nil {
+		return err
+	}
 	err = InitMongo()
 	if err != nil {
 		return err
