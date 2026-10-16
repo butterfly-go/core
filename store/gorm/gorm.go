@@ -1,6 +1,11 @@
 package gorm
 
 import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"sync"
+
 	// mysql driver
 	"github.com/XSAM/otelsql"
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -68,6 +73,38 @@ func G[T any](db *DB, opts ...clause.Expression) Interface[T] {
 // NOTE: gorm.Open is intentionally not re-exported. Use NewDB, which installs
 // the tracing plugin and registers DB stats metrics.
 
+var (
+	gormDBs   = make(map[string]*DB)
+	gormDBsMu sync.RWMutex
+)
+
+// RegisterFromSQL wires a *sql.DB opened by the core SQL store (MySQL driver)
+// into a GORM handle named name. It is idempotent per process: the last
+// registration for a given name wins. Call during application init only.
+func RegisterFromSQL(name string, sqlDB *sql.DB) error {
+	if name == "" {
+		return errors.New("gorm: empty store name")
+	}
+	if sqlDB == nil {
+		return fmt.Errorf("gorm: nil sql DB for %q", name)
+	}
+	// Do not touch the network here: the pool is shared with the core SQL
+	// store, whose connectivity check is best-effort, so an unreachable
+	// database must not prevent the service from starting.
+	dialector := mysql.New(mysql.Config{Conn: sqlDB, SkipInitializeWithVersion: true})
+	db, err := gorm.Open(dialector, &gorm.Config{DisableAutomaticPing: true})
+	if err != nil {
+		return fmt.Errorf("gorm: open %q: %w", name, err)
+	}
+	if err := db.Use(tracing.NewPlugin()); err != nil {
+		return fmt.Errorf("gorm: otel plugin %q: %w", name, err)
+	}
+	gormDBsMu.Lock()
+	gormDBs[name] = db
+	gormDBsMu.Unlock()
+	return nil
+}
+
 // NewDB opens a MySQL connection with tracing and DB stats metrics enabled.
 // MySQL only for now.
 func NewDB(dsn string) (*DB, error) {
@@ -101,6 +138,10 @@ func NewDB(dsn string) (*DB, error) {
 	return db, nil
 }
 
-func GetDB(_ string) *DB {
-	return nil
+// GetDB returns the GORM handle registered for the store entry name, or nil
+// if there is none (unknown name, or a non-MySQL entry).
+func GetDB(name string) *DB {
+	gormDBsMu.RLock()
+	defer gormDBsMu.RUnlock()
+	return gormDBs[name]
 }
