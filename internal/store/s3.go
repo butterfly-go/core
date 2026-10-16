@@ -10,7 +10,8 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"go.opentelemetry.io/contrib/instrumentation/github.com/aws/aws-sdk-go-v2/otelaws"
+	"github.com/aws/smithy-go/tracing/smithyoteltracing"
+	"go.opentelemetry.io/otel"
 )
 
 var (
@@ -99,6 +100,6 @@ func newS3Client(name string, v mod.S3Config) (*s3.Client, error) {
 			}
 			o.BaseEndpoint = &endpoint
 		}
-		otelaws.AppendMiddlewares(&o.APIOptions)
+		o.TracerProvider = smithyoteltracing.Adapt(otel.GetTracerProvider())
 	}), nil
 }
