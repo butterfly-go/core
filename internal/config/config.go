@@ -43,7 +43,7 @@ func NewFileConfig() (*FileConfig, error) {
 	return &FileConfig{path: path}, nil
 }
 
-func (f *FileConfig) Get(_ context.Context, key string) ([]byte, error) {
+func (f *FileConfig) Get(_ context.Context, _ string) ([]byte, error) {
 	// For file config, ignore key and just read the file
 	return os.ReadFile(f.path)
 }

@@ -48,7 +48,15 @@ func parseLevel(s string) slog.Level {
 
 type loggerContextKey struct{}
 
-func FromContext(context.Context) *slog.Logger {
+func FromContext(ctx context.Context) *slog.Logger {
+	if ctx == nil {
+		return slog.Default()
+	}
+	if v := ctx.Value(loggerContextKey{}); v != nil {
+		if l, ok := v.(*slog.Logger); ok && l != nil {
+			return l
+		}
+	}
 	return slog.Default()
 }
 
