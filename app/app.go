@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -18,13 +17,13 @@ import (
 	"butterfly.orx.me/core/internal/config"
 	"butterfly.orx.me/core/internal/grpcserver"
 	"butterfly.orx.me/core/internal/health"
+	"butterfly.orx.me/core/internal/httpserver"
 	"butterfly.orx.me/core/internal/log"
 	"butterfly.orx.me/core/internal/observe/metric"
 	"butterfly.orx.me/core/internal/observe/tracing"
 	"butterfly.orx.me/core/internal/runtime"
 	"butterfly.orx.me/core/internal/store"
 	"github.com/gin-gonic/gin"
-	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 )
@@ -322,16 +321,7 @@ func (a *App) shutdownAdmin(ctx context.Context) error {
 }
 
 func (a *App) newHTTPServer() *http.Server {
-	r := gin.New()
-	// Disable log by default
-	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{
-		Output: io.Discard,
-	}))
-
-	// Recovery middleware recovers from any panics and writes a 500 if there was one.
-	r.Use(gin.Recovery())
-
-	r.Use(otelgin.Middleware(a.config.Service))
+	r := httpserver.NewEngine(a.config.Service)
 	if a.config.Router != nil {
 		a.config.Router(r)
 	}
