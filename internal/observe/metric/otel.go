@@ -1,9 +1,13 @@
 package metric
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 
 	prom "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -13,8 +17,14 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 )
 
+const readHeaderTimeout = 10 * time.Second
+
 var (
 	registry = prom.NewRegistry()
+
+	mu            sync.Mutex
+	meterProvider *metric.MeterProvider
+	metricsServer *http.Server
 )
 
 func PrometheusRegister() *prom.Registry {
@@ -39,19 +49,55 @@ func Init() error {
 
 	provider := metric.NewMeterProvider(metric.WithReader(exporter))
 	otel.SetMeterProvider(provider)
-	go serveMetrics()
-	return nil
-}
 
-func serveMetrics() {
-	slog.Info("serving metrics", "addr", "localhost:2223", "path", "/metrics")
-	http.Handle("/metrics", promhttp.InstrumentMetricHandler(
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.InstrumentMetricHandler(
 		registry,
 		promhttp.HandlerFor(registry, promhttp.HandlerOpts{})),
 	)
-	err := http.ListenAndServe(":2223", nil) //nolint:gosec // Ignoring G114: Use of net/http serve function that has no support for setting timeouts.
-	if err != nil {
+	srv := &http.Server{
+		Addr:              ":2223",
+		Handler:           mux,
+		ReadHeaderTimeout: readHeaderTimeout,
+	}
+
+	mu.Lock()
+	meterProvider = provider
+	metricsServer = srv
+	mu.Unlock()
+
+	go serveMetrics(srv)
+	return nil
+}
+
+func serveMetrics(srv *http.Server) {
+	slog.Info("serving metrics", "addr", "localhost:2223", "path", "/metrics")
+	err := srv.ListenAndServe()
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("error serving metrics", "error", err.Error())
 		return
 	}
+}
+
+// Shutdown stops the metrics HTTP endpoint and shuts down the OpenTelemetry
+// meter provider. It is safe to call when Init was never called, and safe to
+// call more than once.
+func Shutdown(ctx context.Context) error {
+	mu.Lock()
+	srv, provider := metricsServer, meterProvider
+	metricsServer, meterProvider = nil, nil
+	mu.Unlock()
+
+	var errs []error
+	if srv != nil {
+		if err := srv.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown metrics server: %w", err))
+		}
+	}
+	if provider != nil {
+		if err := provider.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown meter provider: %w", err))
+		}
+	}
+	return errors.Join(errs...)
 }

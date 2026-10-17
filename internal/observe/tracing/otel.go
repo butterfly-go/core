@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sync"
 
 	"butterfly.orx.me/core/internal/arg"
 	"butterfly.orx.me/core/internal/config"
@@ -20,6 +21,11 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+)
+
+var (
+	mu             sync.Mutex
+	tracerProvider *sdktrace.TracerProvider
 )
 
 func NewTracerProvider(ctx context.Context) (*otlptrace.Exporter, error) {
@@ -79,16 +85,37 @@ func Init() error {
 	// span processor to aggregate spans before export.
 	bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
 	sampler := traceSamplerFromConfig(config.CoreConfig().Otel)
-	tracerProvider := sdktrace.NewTracerProvider(
+	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSampler(sampler),
 		sdktrace.WithResource(res),
 		sdktrace.WithSpanProcessor(bsp),
 	)
-	otel.SetTracerProvider(tracerProvider)
+	otel.SetTracerProvider(tp)
+
+	mu.Lock()
+	tracerProvider = tp
+	mu.Unlock()
 
 	// set global propagator to tracecontext (the default is no-op).
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
+	return nil
+}
+
+// Shutdown flushes buffered spans and shuts down the tracer provider, which
+// also closes the exporter. It is a no-op when tracing was disabled or never
+// initialized, and is safe to call more than once.
+func Shutdown(ctx context.Context) error {
+	mu.Lock()
+	tp := tracerProvider
+	tracerProvider = nil
+	mu.Unlock()
+	if tp == nil {
+		return nil
+	}
+	if err := tp.Shutdown(ctx); err != nil {
+		return fmt.Errorf("shutdown tracer provider: %w", err)
+	}
 	return nil
 }
 
