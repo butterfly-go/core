@@ -14,6 +14,8 @@ import (
 	"butterfly.orx.me/core/internal/config"
 	"butterfly.orx.me/core/internal/health"
 	"butterfly.orx.me/core/mod"
+	"butterfly.orx.me/core/utils/httputils"
+	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -293,6 +295,61 @@ func TestGRPCInterceptorsFromConfigAreInstalled(t *testing.T) {
 		t.Fatalf("unary interceptor calls = %d, want 1", got)
 	}
 	eventually(t, "stream interceptor", func() bool { return streamCalls.Load() == 1 })
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHTTPMiddlewareIsInstalledOnServedRouter(t *testing.T) {
+	a := New(&Config{
+		Service:         "http-middleware-test",
+		ShutdownTimeout: 5 * time.Second,
+		Router: func(r *gin.Engine) {
+			r.GET("/id", func(c *gin.Context) { c.String(http.StatusOK, httputils.RequestID(c)) })
+			r.GET("/boom", func(*gin.Context) { panic("kaboom") })
+		},
+	})
+	a.addrs.HTTP = freeAddr(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- a.serve(ctx) }()
+	waitForTCP(t, a.addrs.HTTP)
+
+	get := func(path, id string) (int, http.Header, string) {
+		req, err := http.NewRequest(http.MethodGet, "http://"+a.addrs.HTTP+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if id != "" {
+			req.Header.Set(httputils.RequestIDHeader, id)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, resp.Header, string(b)
+	}
+
+	_, header, body := get("/id", "client-id-1")
+	if header.Get(httputils.RequestIDHeader) != "client-id-1" || body != "client-id-1" {
+		t.Fatalf("request id: header=%q body=%q", header.Get(httputils.RequestIDHeader), body)
+	}
+	code, header, body := get("/boom", "")
+	if code != http.StatusInternalServerError || strings.Contains(body, "kaboom") {
+		t.Fatalf("panic: status=%d body=%q", code, body)
+	}
+	if header.Get(httputils.RequestIDHeader) == "" {
+		t.Fatal("a 500 from a panic should still carry a request id")
+	}
+	if code, _, _ := get("/id", ""); code != http.StatusOK {
+		t.Fatalf("server should survive the panic, got %d", code)
+	}
 
 	cancel()
 	if err := <-done; err != nil {
