@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 
+	"butterfly.orx.me/core/internal/health"
 	"butterfly.orx.me/core/internal/log"
 )
 
@@ -27,6 +28,37 @@ func Init() error {
 		return err
 	}
 	return InitS3()
+}
+
+// HealthChecks returns one readiness check per open Redis, SQL and Mongo
+// client, named "redis/<name>", "sql/<name>" and "mongo/<name>", in a stable
+// order. It snapshots the clients, so call it after Init. S3 is not included:
+// a meaningful probe needs bucket permissions and costs a request, so apps
+// that want one can register their own.
+func HealthChecks() []health.Check {
+	var checks []health.Check
+	for _, name := range sortedKeys(redisClients) {
+		client := redisClients[name]
+		checks = append(checks, health.Check{
+			Name:  "redis/" + name,
+			Check: func(ctx context.Context) error { return client.Ping(ctx).Err() },
+		})
+	}
+	for _, name := range sortedKeys(sqldbClients) {
+		db := sqldbClients[name]
+		checks = append(checks, health.Check{
+			Name:  "sql/" + name,
+			Check: db.PingContext,
+		})
+	}
+	for _, name := range sortedKeys(mongoClients) {
+		client := mongoClients[name]
+		checks = append(checks, health.Check{
+			Name:  "mongo/" + name,
+			Check: func(ctx context.Context) error { return client.Ping(ctx, nil) },
+		})
+	}
+	return checks
 }
 
 // Close releases every client opened by Init (Redis, SQL, Mongo).

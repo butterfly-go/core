@@ -16,6 +16,7 @@ import (
 
 	"butterfly.orx.me/core/internal/admin"
 	"butterfly.orx.me/core/internal/config"
+	"butterfly.orx.me/core/internal/health"
 	"butterfly.orx.me/core/internal/log"
 	"butterfly.orx.me/core/internal/observe/metric"
 	"butterfly.orx.me/core/internal/observe/tracing"
@@ -39,6 +40,10 @@ const (
 	serverCount = 2
 )
 
+// HealthCheck is a named readiness check. Check must return nil when the
+// dependency is healthy and should honor ctx, which carries a timeout.
+type HealthCheck = health.Check
+
 type Config struct {
 	Service      string
 	Namespace    string
@@ -54,6 +59,11 @@ type Config struct {
 	// ShutdownTimeout bounds the whole graceful shutdown sequence. Defaults to
 	// DefaultShutdownTimeout when zero or negative.
 	ShutdownTimeout time.Duration
+	// HealthChecks are extra readiness checks reported on /readyz and gRPC
+	// health, in addition to the built-in Redis, SQL and Mongo checks. Names
+	// must be unique and must not collide with the built-in ones
+	// ("redis/<name>", "sql/<name>", "mongo/<name>").
+	HealthChecks []HealthCheck
 }
 
 func (c Config) ConfigKey() string {
@@ -77,12 +87,16 @@ type App struct {
 	// replaced by the resolved core config during init (see initServer).
 	addrs config.ServerAddrs
 	admin *admin.Server
+	// shutdownDelay is the pause between going not-ready and stopping servers.
+	shutdownDelay time.Duration
+	health        *health.Registry
 }
 
 func New(cfg *Config) *App {
 	return &App{
 		config: cfg,
 		addrs:  config.DefaultServerAddrs(),
+		health: health.New(),
 	}
 }
 
@@ -122,6 +136,7 @@ func (a *App) RunContext(ctx context.Context) error {
 		NewFn(a.initAdmin),
 		NewFn(tracing.Init),
 		NewFn(store.Init),
+		NewFn(a.initHealth),
 	)
 
 	for _, fn := range a.config.InitFunc {
@@ -154,6 +169,8 @@ func (a *App) serve(ctx context.Context) error {
 		return err
 	}
 
+	a.health.SetState(health.Ready)
+
 	var serveErr error
 	select {
 	case <-ctx.Done():
@@ -162,8 +179,21 @@ func (a *App) serve(ctx context.Context) error {
 		logger.Error("server stopped unexpectedly, shutting down", "error", serveErr.Error())
 	}
 
+	// The shutdown budget starts now, so the delay below counts against it.
 	shutdownCtx, cancel := a.newShutdownContext()
 	defer cancel()
+
+	// Report not-ready first so load balancers stop routing here, and give
+	// them shutdownDelay to notice. Skipped when a server already failed:
+	// there is nothing worth waiting for.
+	a.health.SetState(health.Draining)
+	if serveErr == nil && a.shutdownDelay > 0 {
+		logger.Info("not ready, waiting before stopping servers", "delay", a.shutdownDelay.String())
+		select {
+		case <-time.After(a.shutdownDelay):
+		case <-shutdownCtx.Done():
+		}
+	}
 	srvs.stop(shutdownCtx)
 	a.shutdown(shutdownCtx)
 	return serveErr
@@ -247,12 +277,33 @@ func (a *App) initServer() error {
 		return fmt.Errorf("server config: %w", err)
 	}
 	a.addrs = addrs
+
+	delay := config.CoreConfig().Server.ShutdownDelay
+	if delay < 0 {
+		return fmt.Errorf("server config: shutdown_delay %s must not be negative", delay)
+	}
+	if timeout := a.config.shutdownTimeout(); delay >= timeout {
+		return fmt.Errorf("server config: shutdown_delay %s must be smaller than the shutdown timeout %s", delay, timeout)
+	}
+	a.shutdownDelay = delay
 	return nil
 }
 
-// initAdmin starts the admin server (/metrics).
+// initHealth registers the built-in store checks and the user's own.
+func (a *App) initHealth() error {
+	if err := a.health.Add(store.HealthChecks()...); err != nil {
+		return fmt.Errorf("register store health checks: %w", err)
+	}
+	if err := a.health.Add(a.config.HealthChecks...); err != nil {
+		return fmt.Errorf("register health checks: %w", err)
+	}
+	return nil
+}
+
+// initAdmin starts the admin server (/metrics, /healthz, /readyz).
 func (a *App) initAdmin() error {
 	a.admin = admin.New(metric.PrometheusRegister())
+	a.health.Mount(a.admin)
 	return a.admin.Start(a.addrs.Admin)
 }
 
@@ -321,6 +372,8 @@ func (a *App) startServers() (*servers, error) {
 	if grpcLis != nil {
 		s.grpc = grpc.NewServer()
 		a.config.GRPCRegister(s.grpc)
+		// Standard gRPC health, tied to readiness, unless the app has its own.
+		health.NewGRPCServer(a.health).Register(s.grpc)
 		logger.Info("grpc server listening", "addr", grpcLis.Addr().String())
 		go func() {
 			if err := s.grpc.Serve(grpcLis); err != nil {

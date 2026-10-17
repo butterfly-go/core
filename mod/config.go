@@ -1,5 +1,7 @@
 package mod
 
+import "time"
+
 type CoreConfig struct {
 	Store StoreConfig `yaml:"store"`
 	Otel  OtelConfig  `yaml:"otel"`
@@ -16,8 +18,15 @@ type ServerConfig struct {
 	// GRPC is the gRPC server, only started when app.Config.GRPCRegister is
 	// set. Defaults to ":9090".
 	GRPC ListenConfig `yaml:"grpc"`
-	// Admin serves operational endpoints such as /metrics. Defaults to ":2223".
+	// Admin serves operational endpoints: /metrics, /healthz and /readyz.
+	// Defaults to ":2223".
 	Admin ListenConfig `yaml:"admin"`
+	// ShutdownDelay is how long to wait between reporting not-ready on
+	// /readyz (and gRPC health) and starting to stop the servers, so load
+	// balancers have time to stop routing here. Defaults to 0 (no delay). It
+	// counts against app.Config.ShutdownTimeout and must be smaller than it.
+	// Accepts Go durations such as "5s".
+	ShutdownDelay time.Duration `yaml:"shutdown_delay"`
 }
 
 // ListenConfig is a single listen address.
