@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"butterfly.orx.me/core/internal/admin"
 	"butterfly.orx.me/core/internal/config"
 	"butterfly.orx.me/core/internal/log"
 	"butterfly.orx.me/core/internal/observe/metric"
@@ -72,15 +73,16 @@ func (c Config) shutdownTimeout() time.Duration {
 type App struct {
 	config *Config
 
-	// Listen addresses. Empty means the default (see httpListenAddr and
-	// grpcListenAddr); tests override them.
-	httpAddr string
-	grpcAddr string
+	// addrs are the listen addresses. They start as the defaults and are
+	// replaced by the resolved core config during init (see initServer).
+	addrs config.ServerAddrs
+	admin *admin.Server
 }
 
-func New(config *Config) *App {
+func New(cfg *Config) *App {
 	return &App{
-		config: config,
+		config: cfg,
+		addrs:  config.DefaultServerAddrs(),
 	}
 }
 
@@ -115,7 +117,9 @@ func (a *App) RunContext(ctx context.Context) error {
 		NewFn(a.InitAppConfig),
 		NewFn(config.CoreConfigInit),
 		NewFn(config.LogInit),
+		NewFn(a.initServer),
 		NewFn(metric.Init),
+		NewFn(a.initAdmin),
 		NewFn(tracing.Init),
 		NewFn(store.Init),
 	)
@@ -197,8 +201,8 @@ func runTeardownFunc(logger *slog.Logger, index int, fn func() error) {
 }
 
 // shutdownCore releases the resources owned by the framework. Each step is
-// attempted regardless of earlier failures. Metrics go last so they remain
-// scrapeable while everything else drains.
+// attempted regardless of earlier failures. The admin server goes after the
+// stores and tracing so its endpoints stay reachable while they drain.
 func (a *App) shutdownCore(ctx context.Context) {
 	logger := log.CoreLogger("app.shutdown")
 	steps := []struct {
@@ -207,6 +211,7 @@ func (a *App) shutdownCore(ctx context.Context) {
 	}{
 		{"store", store.Close},
 		{"tracing", tracing.Shutdown},
+		{"admin", a.shutdownAdmin},
 		{"metrics", metric.Shutdown},
 	}
 	for _, step := range steps {
@@ -234,22 +239,28 @@ func (a *App) InitAppConfig() error {
 	return err
 }
 
-func (a *App) httpListenAddr() string {
-	if a.httpAddr != "" {
-		return a.httpAddr
+// initServer resolves and validates the listen addresses from the core config.
+func (a *App) initServer() error {
+	addrs, err := config.ResolveServerAddrs(
+		config.CoreConfig().Server, os.Getenv("PORT"), a.config.GRPCRegister != nil)
+	if err != nil {
+		return fmt.Errorf("server config: %w", err)
 	}
-	// Same default as gin's Engine.Run: $PORT, falling back to 8080.
-	if port := os.Getenv("PORT"); port != "" {
-		return ":" + port
-	}
-	return ":8080"
+	a.addrs = addrs
+	return nil
 }
 
-func (a *App) grpcListenAddr() string {
-	if a.grpcAddr != "" {
-		return a.grpcAddr
+// initAdmin starts the admin server (/metrics).
+func (a *App) initAdmin() error {
+	a.admin = admin.New(metric.PrometheusRegister())
+	return a.admin.Start(a.addrs.Admin)
+}
+
+func (a *App) shutdownAdmin(ctx context.Context) error {
+	if a.admin == nil {
+		return nil
 	}
-	return ":9090"
+	return a.admin.Shutdown(ctx)
 }
 
 func (a *App) newHTTPServer() *http.Server {
@@ -286,13 +297,13 @@ func (a *App) startServers() (*servers, error) {
 	logger := log.CoreLogger("app.serve")
 	s := &servers{errCh: make(chan error, serverCount)}
 
-	httpLis, err := net.Listen("tcp", a.httpListenAddr())
+	httpLis, err := net.Listen("tcp", a.addrs.HTTP)
 	if err != nil {
 		return nil, fmt.Errorf("listen http: %w", err)
 	}
 	var grpcLis net.Listener
 	if a.config.GRPCRegister != nil {
-		grpcLis, err = net.Listen("tcp", a.grpcListenAddr())
+		grpcLis, err = net.Listen("tcp", a.addrs.GRPC)
 		if err != nil {
 			_ = httpLis.Close()
 			return nil, fmt.Errorf("listen grpc: %w", err)

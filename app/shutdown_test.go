@@ -92,7 +92,7 @@ func TestServeDrainsInFlightRequestsAndRunsTeardownInReverse(t *testing.T) {
 		},
 		ShutdownTimeout: 10 * time.Second,
 	})
-	a.httpAddr = httpAddr
+	a.addrs.HTTP = httpAddr
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -174,7 +174,7 @@ func TestServeForcesShutdownAfterTimeout(t *testing.T) {
 		},
 		ShutdownTimeout: 200 * time.Millisecond,
 	})
-	a.httpAddr = httpAddr
+	a.addrs.HTTP = httpAddr
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -210,7 +210,7 @@ func TestServeStopsGRPCServer(t *testing.T) {
 		},
 		ShutdownTimeout: 5 * time.Second,
 	})
-	a.httpAddr, a.grpcAddr = httpAddr, grpcAddr
+	a.addrs.HTTP, a.addrs.GRPC = httpAddr, grpcAddr
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -256,7 +256,7 @@ func TestServeReturnsErrorWhenAddressInUse(t *testing.T) {
 		Service:      "listen-error-test",
 		TeardownFunc: []func() error{func() error { tornDown = true; return nil }},
 	})
-	a.httpAddr = l.Addr().String()
+	a.addrs.HTTP = l.Addr().String()
 
 	done := make(chan error, 1)
 	go func() { done <- a.serve(context.Background()) }()
@@ -271,21 +271,5 @@ func TestServeReturnsErrorWhenAddressInUse(t *testing.T) {
 	}
 	if !tornDown {
 		t.Fatal("teardown funcs should run when serving fails to start")
-	}
-}
-
-func TestHTTPListenAddr(t *testing.T) {
-	a := New(&Config{})
-	t.Setenv("PORT", "")
-	if got := a.httpListenAddr(); got != ":8080" {
-		t.Fatalf("default addr = %q", got)
-	}
-	t.Setenv("PORT", "9000")
-	if got := a.httpListenAddr(); got != ":9000" {
-		t.Fatalf("PORT addr = %q", got)
-	}
-	a.httpAddr = "127.0.0.1:1"
-	if got := a.httpListenAddr(); got != "127.0.0.1:1" {
-		t.Fatalf("override addr = %q", got)
 	}
 }

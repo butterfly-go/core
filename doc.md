@@ -10,7 +10,7 @@ Butterfly is a lightweight microservice framework designed for the Go language, 
 - **Service Runtime**: Provides application lifecycle management with initialization function chain
 - **Transport Layer Support**: 
   - HTTP server (based on Gin framework)
-  - gRPC server support (port 9090)
+  - gRPC server support (default port 9090, configurable)
   - Twirp RPC support
 - **Data Storage**: 
   - GORM (MySQL and other relational databases)
@@ -19,7 +19,7 @@ Butterfly is a lightweight microservice framework designed for the Go language, 
   - Native SQL database connections
   - S3-compatible object storage (AWS SDK v2)
 - **Observability**:
-  - Prometheus metrics collection and exposure (port 2223)
+  - Prometheus metrics collection and exposure (default port 2223, configurable)
   - OpenTelemetry distributed tracing
   - Structured logging system (based on `log/slog`)
 - **Middleware Integration**: Automatic integration of OpenTelemetry middleware for request tracing
@@ -142,7 +142,18 @@ log:
 # OpenTelemetry configuration
 otel:
   # Configuration items to be extended
+
+# Listen addresses (all optional; the values shown are the defaults)
+server:
+  http:
+    addr: ":8080"      # business HTTP server; defaults to $PORT when set
+  grpc:
+    addr: ":9090"      # only started when GRPCRegister is set
+  admin:
+    addr: ":2223"      # /metrics
 ```
+
+Each `addr` is a `host:port` pair, for example `":8081"` or `"127.0.0.1:8081"`. Use port `0` to pick a free port; the actual address is logged at startup. The HTTP address is resolved in this order: `server.http.addr`, then the `PORT` environment variable, then `:8080`. Invalid addresses, or two servers that would bind the same port, make startup fail with a message naming the offending keys. The gRPC address is not checked for conflicts when no gRPC server is registered.
 
 ### 3. Consul Configuration Center
 
@@ -315,7 +326,7 @@ func setupHTTPRoutes(r *gin.Engine) {
 
 ## gRPC Service
 
-The framework automatically starts a gRPC server on port 9090:
+The framework automatically starts a gRPC server on port 9090 (change it with `server.grpc.addr`):
 
 ```go
 func setupGRPCServer(s *grpc.Server) {
@@ -557,7 +568,7 @@ store:
 
 ### Prometheus Metrics
 
-The framework automatically exposes the `/metrics` endpoint on port 2223:
+The framework automatically exposes the `/metrics` endpoint on port 2223 (change it with `server.admin.addr`):
 
 ```go
 import (
