@@ -4,6 +4,27 @@ type CoreConfig struct {
 	Store StoreConfig `yaml:"store"`
 	Otel  OtelConfig  `yaml:"otel"`
 	Log   LogConfig   `yaml:"log"`
+	// Server configures the listen addresses of the built-in servers.
+	Server ServerConfig `yaml:"server"`
+}
+
+// ServerConfig holds the listen addresses of the servers the framework runs.
+// Every field is optional; see the defaults on each.
+type ServerConfig struct {
+	// HTTP is the business HTTP server. Defaults to $PORT when set, else ":8080".
+	HTTP ListenConfig `yaml:"http"`
+	// GRPC is the gRPC server, only started when app.Config.GRPCRegister is
+	// set. Defaults to ":9090".
+	GRPC ListenConfig `yaml:"grpc"`
+	// Admin serves operational endpoints such as /metrics. Defaults to ":2223".
+	Admin ListenConfig `yaml:"admin"`
+}
+
+// ListenConfig is a single listen address.
+type ListenConfig struct {
+	// Addr is a host:port pair such as ":8080" or "127.0.0.1:8080". Port 0
+	// picks a free port.
+	Addr string `yaml:"addr"`
 }
 
 type LogConfig struct {
