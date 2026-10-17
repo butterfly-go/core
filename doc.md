@@ -1849,23 +1849,41 @@ slog.SetDefault(slog.New(textHandler))
 
 ### 3. How to implement graceful shutdown?
 
-The framework automatically handles graceful shutdown, but you can register cleanup functions:
+`app.Run()` handles `SIGINT` and `SIGTERM` for you. On a signal it shuts down in this order:
+
+1. Stops accepting new connections and drains in-flight HTTP requests and gRPC calls.
+2. Runs your `TeardownFunc` entries in **reverse** order (like `defer`). An error or panic in one is logged and does not stop the others.
+3. Closes the framework's own resources: Redis, SQL and Mongo clients.
+4. Flushes and shuts down tracing, then stops the metrics endpoint.
+
+The whole sequence shares one time budget, `ShutdownTimeout` (default 30s). When it expires, remaining connections are cut. A second signal during shutdown terminates the process immediately.
 
 ```go
 config := &app.Config{
-    Service: "my-service",
+    Service:         "my-service",
+    ShutdownTimeout: 20 * time.Second, // optional, default 30s
     TeardownFunc: []func() error{
         func() error {
-            // Close database connection
-            sqlDB, _ := db.DB()
-            return sqlDB.Close()
+            // Registered first, runs last
+            return messageQueue.Close()
         },
         func() error {
-            // Close message queue connection
-            return messageQueue.Close()
+            // Registered last, runs first
+            return myCache.Flush()
         },
     },
 }
+```
+
+You do not need to close clients obtained from `store/*` (Redis, Mongo, SQL); the framework closes them. Resources you create yourself, such as a GORM `*gorm.DB` from `gorm.NewDB`, still need a teardown function.
+
+To drive shutdown from your own context instead of OS signals (for example in tests), use `RunContext`:
+
+```go
+ctx, cancel := context.WithCancel(context.Background())
+go func() { _ = application.RunContext(ctx) }()
+// ...
+cancel() // triggers the same graceful shutdown
 ```
 
 ### 4. How to add rate limiting?
