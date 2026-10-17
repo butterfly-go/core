@@ -85,3 +85,51 @@ func TestCloseJoinsErrorsAndContinues(t *testing.T) {
 		t.Fatal("sql db should be closed")
 	}
 }
+
+func TestHealthChecksNamesAndFailures(t *testing.T) {
+	t.Cleanup(func() { _ = Close(context.Background()) })
+	redisClients["cache"] = redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	redisClients["a"] = redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	db, err := sql.Open("pgx", "postgres://u:p@127.0.0.1:1/d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqldbClients["main"] = db
+	mc, err := mongo.Connect(options.Client().ApplyURI("mongodb://127.0.0.1:1").SetServerSelectionTimeout(100 * time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mongoClients["m"] = mc
+	s3Buckets["s"] = "bucket" // S3 is deliberately not health-checked
+
+	checks := HealthChecks()
+	names := make([]string, 0, len(checks))
+	for _, c := range checks {
+		names = append(names, c.Name)
+	}
+	want := []string{"redis/a", "redis/cache", "sql/main", "mongo/m"}
+	if len(names) != len(want) {
+		t.Fatalf("names = %v, want %v", names, want)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Fatalf("names = %v, want %v", names, want)
+		}
+	}
+
+	// Nothing is listening, so every check must report an error rather than hang.
+	for _, c := range checks {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := c.Check(ctx)
+		cancel()
+		if err == nil {
+			t.Fatalf("%s: expected an error against an unreachable server", c.Name)
+		}
+	}
+}
+
+func TestHealthChecksEmpty(t *testing.T) {
+	if got := HealthChecks(); len(got) != 0 {
+		t.Fatalf("got %d checks with no clients", len(got))
+	}
+}

@@ -3,8 +3,10 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"butterfly.orx.me/core/mod"
+	"gopkg.in/yaml.v3"
 )
 
 func srvCfg(httpAddr, grpcAddr, adminAddr string) mod.ServerConfig {
@@ -128,5 +130,16 @@ func TestResolveServerAddrs(t *testing.T) {
 				t.Fatalf("got %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestServerConfigYAML(t *testing.T) {
+	var cfg mod.CoreConfig
+	in := "server:\n  http: {addr: \":18080\"}\n  shutdown_delay: 5s\n"
+	if err := yaml.Unmarshal([]byte(in), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.HTTP.Addr != ":18080" || cfg.Server.ShutdownDelay != 5*time.Second {
+		t.Fatalf("parsed = %+v", cfg.Server)
 	}
 }
