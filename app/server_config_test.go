@@ -51,3 +51,13 @@ func TestInitServerUsesPortEnvAndRejectsConflicts(t *testing.T) {
 		t.Fatal("PORT=9090 with grpc registered should conflict")
 	}
 }
+
+func TestInitAppConfigWithoutConfigIsANoop(t *testing.T) {
+	// Config is optional; a service with nothing of its own to configure must
+	// not crash. The package's TestMain has already initialized the config
+	// backend, so a failure here would be the nil unmarshal, not a missing backend.
+	a := New(&Config{Service: "no-app-config"})
+	if err := a.InitAppConfig(); err != nil {
+		t.Fatalf("InitAppConfig with nil Config: %v", err)
+	}
+}
