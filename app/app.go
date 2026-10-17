@@ -16,6 +16,7 @@ import (
 
 	"butterfly.orx.me/core/internal/admin"
 	"butterfly.orx.me/core/internal/config"
+	"butterfly.orx.me/core/internal/grpcserver"
 	"butterfly.orx.me/core/internal/health"
 	"butterfly.orx.me/core/internal/log"
 	"butterfly.orx.me/core/internal/observe/metric"
@@ -50,7 +51,13 @@ type Config struct {
 	Config       config.AppConfig
 	Router       func(*gin.Engine)
 	GRPCRegister func(*grpc.Server)
-	InitFunc     []func() error
+	// GRPCUnaryInterceptors and GRPCStreamInterceptors are your own gRPC
+	// interceptors. They run in order, inside the built-in ones (tracing,
+	// logging with trace ids, panic recovery), so they can use
+	// log.FromContext and a panic in them is recovered too.
+	GRPCUnaryInterceptors  []grpc.UnaryServerInterceptor
+	GRPCStreamInterceptors []grpc.StreamServerInterceptor
+	InitFunc               []func() error
 	// TeardownFunc are called during graceful shutdown, after the HTTP and
 	// gRPC servers have stopped accepting work and before the core resources
 	// (stores, tracing, metrics) are released. They run in reverse order, like
@@ -370,7 +377,10 @@ func (a *App) startServers() (*servers, error) {
 	}()
 
 	if grpcLis != nil {
-		s.grpc = grpc.NewServer()
+		s.grpc = grpcserver.New(grpcserver.Options{
+			Unary:  a.config.GRPCUnaryInterceptors,
+			Stream: a.config.GRPCStreamInterceptors,
+		})
 		a.config.GRPCRegister(s.grpc)
 		// Standard gRPC health, tied to readiness, unless the app has its own.
 		health.NewGRPCServer(a.health).Register(s.grpc)

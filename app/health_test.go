@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -236,5 +237,65 @@ func TestInitServerShutdownDelayValidation(t *testing.T) {
 				t.Fatalf("shutdownDelay = %v, want %v", a.shutdownDelay, tt.delay)
 			}
 		})
+	}
+}
+
+func TestGRPCInterceptorsFromConfigAreInstalled(t *testing.T) {
+	var unaryCalls, streamCalls atomic.Int32
+	a := New(&Config{
+		Service:         "grpc-interceptor-test",
+		ShutdownTimeout: 5 * time.Second,
+		GRPCRegister:    func(*grpc.Server) {},
+		GRPCUnaryInterceptors: []grpc.UnaryServerInterceptor{
+			func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, h grpc.UnaryHandler) (any, error) {
+				unaryCalls.Add(1)
+				return h(ctx, req)
+			},
+		},
+		GRPCStreamInterceptors: []grpc.StreamServerInterceptor{
+			func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, h grpc.StreamHandler) error {
+				streamCalls.Add(1)
+				return h(srv, ss)
+			},
+		},
+	})
+	a.addrs = config.ServerAddrs{HTTP: freeAddr(t), GRPC: freeAddr(t), Admin: "127.0.0.1:0"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- a.serve(ctx) }()
+	waitForTCP(t, a.addrs.GRPC)
+
+	conn, err := grpc.NewClient(a.addrs.GRPC, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	callCtx, callCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer callCancel()
+	hc := healthpb.NewHealthClient(conn)
+	if _, err := hc.Check(callCtx, &healthpb.HealthCheckRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	// Watch is a server-streaming RPC.
+	watchCtx, watchCancel := context.WithCancel(callCtx)
+	stream, err := hc.Watch(watchCtx, &healthpb.HealthCheckRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	watchCancel()
+
+	if got := unaryCalls.Load(); got != 1 {
+		t.Fatalf("unary interceptor calls = %d, want 1", got)
+	}
+	eventually(t, "stream interceptor", func() bool { return streamCalls.Load() == 1 })
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

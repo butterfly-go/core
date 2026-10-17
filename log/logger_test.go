@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"butterfly.orx.me/core/mod"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func boolPtr(b bool) *bool { return &b }
@@ -126,6 +128,79 @@ func TestFromContext(t *testing.T) {
 		ctx := context.WithValue(context.Background(), loggerContextKey{}, "not a logger")
 		if got := FromContext(ctx); got != def {
 			t.Fatalf("FromContext = %p, want default %p", got, def)
+		}
+	})
+}
+
+func TestFromContextAddsTraceIDs(t *testing.T) {
+	traceID, _ := trace.TraceIDFromHex("0102030405060708090a0b0c0d0e0f10")
+	spanID, _ := trace.SpanIDFromHex("1112131415161718")
+	spanCtx := func(ctx context.Context, sc trace.SpanContext) context.Context {
+		return trace.ContextWithSpanContext(ctx, sc)
+	}
+	valid := trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled})
+
+	logLine := func(ctx context.Context) map[string]any {
+		t.Helper()
+		var buf bytes.Buffer
+		ctx = WithLogger(ctx, slog.New(slog.NewJSONHandler(&buf, nil)))
+		FromContext(ctx).Info("hello", "k", "v")
+		var m map[string]any
+		if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
+			t.Fatalf("log line %q: %v", buf.String(), err)
+		}
+		return m
+	}
+
+	t.Run("valid span adds ids and keeps other attrs", func(t *testing.T) {
+		m := logLine(spanCtx(context.Background(), valid))
+		if m[TraceIDKey] != traceID.String() || m[SpanIDKey] != spanID.String() || m["k"] != "v" {
+			t.Fatalf("payload = %v", m)
+		}
+	})
+
+	t.Run("works with the default logger too", func(t *testing.T) {
+		var buf bytes.Buffer
+		old := slog.Default()
+		slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+		t.Cleanup(func() { slog.SetDefault(old) })
+		FromContext(spanCtx(context.Background(), valid)).Info("hi")
+		if !bytes.Contains(buf.Bytes(), []byte(traceID.String())) {
+			t.Fatalf("default logger line lacks trace id: %s", buf.String())
+		}
+	})
+
+	t.Run("no span leaves the logger untouched", func(t *testing.T) {
+		m := logLine(context.Background())
+		if _, ok := m[TraceIDKey]; ok {
+			t.Fatalf("unexpected trace_id: %v", m)
+		}
+		custom := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
+		if got := FromContext(WithLogger(context.Background(), custom)); got != custom {
+			t.Fatal("logger must be returned as-is when there is no span")
+		}
+	})
+
+	t.Run("invalid span context adds nothing", func(t *testing.T) {
+		m := logLine(spanCtx(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{})))
+		if _, ok := m[TraceIDKey]; ok {
+			t.Fatalf("unexpected trace_id: %v", m)
+		}
+	})
+
+	t.Run("child span gets its own span_id", func(t *testing.T) {
+		tp := sdktrace.NewTracerProvider()
+		ctx, parent := tp.Tracer("t").Start(context.Background(), "parent")
+		defer parent.End()
+		parentLine := logLine(ctx)
+		ctx, child := tp.Tracer("t").Start(ctx, "child")
+		defer child.End()
+		childLine := logLine(ctx)
+		if parentLine[TraceIDKey] != childLine[TraceIDKey] {
+			t.Fatal("parent and child must share a trace_id")
+		}
+		if parentLine[SpanIDKey] == childLine[SpanIDKey] {
+			t.Fatal("child must have a different span_id")
 		}
 	})
 }

@@ -10,7 +10,7 @@ Butterfly is a lightweight microservice framework designed for the Go language, 
 - **Service Runtime**: Provides application lifecycle management with initialization function chain
 - **Transport Layer Support**: 
   - HTTP server (based on Gin framework)
-  - gRPC server support (default port 9090, configurable)
+  - gRPC server support (default port 9090, configurable) with built-in tracing, call logging and panic recovery
   - Twirp RPC support
 - **Data Storage**: 
   - GORM (MySQL and other relational databases)
@@ -350,6 +350,49 @@ func (s *userServer) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.U
         Id:   req.Id,
         Name: "John Doe",
     }, nil
+}
+```
+
+### Built-in gRPC behavior
+
+Every gRPC server the framework creates comes with:
+
+- **Tracing and metrics.** OpenTelemetry spans and `rpc.server.*` metrics (served on `/metrics`) for every call, continuing the trace of the caller through the `traceparent` header. Health checks are not traced, because probes run every few seconds and would bury real traffic.
+- **Call logging.** One `grpc call` log line per RPC with `grpc.service`, `grpc.method`, `grpc.type` (`unary` or `stream`), `grpc.code`, `duration`, `peer`, `error` (if any), and `trace_id` / `span_id`. The level depends on the outcome, so busy services are not flooded at the default `info` level:
+
+  | Result | Level |
+  |---|---|
+  | `OK` | `debug` |
+  | Caller errors: `InvalidArgument`, `NotFound`, `AlreadyExists`, `PermissionDenied`, `Unauthenticated`, `FailedPrecondition`, `Canceled`, ... | `info` |
+  | Transient problems: `DeadlineExceeded`, `ResourceExhausted`, `Unavailable`, `Aborted` | `warn` |
+  | Bugs and data problems: `Unknown`, `Internal`, `DataLoss`, `Unimplemented` | `error` |
+
+- **Panic recovery.** A panic in a handler or interceptor is logged at `error` with the stack and `trace_id`, recorded on the span, and returned to the caller as `codes.Internal` with the message `internal error`. The panic value is never sent to the caller. The server keeps running.
+- **A request-scoped logger.** Inside a handler, `log.FromContext(ctx)` returns a logger that already has `grpc.service`, `grpc.method`, `trace_id` and `span_id`, so your own log lines line up with the call log and the trace.
+
+```go
+func (s *userServer) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.User, error) {
+    log.FromContext(ctx).Info("loading user", "id", req.Id)
+    // {"msg":"loading user","grpc.method":"GetUser","trace_id":"...","span_id":"...","id":42}
+    ...
+}
+```
+
+#### Your own interceptors
+
+Add interceptors with `GRPCUnaryInterceptors` and `GRPCStreamInterceptors`. They run in order, **inside** the built-in ones. That means they can use `log.FromContext`, and a panic in them is recovered as well:
+
+```go
+config := &app.Config{
+    Service:      "my-service",
+    GRPCRegister: setupGRPCServer,
+    GRPCUnaryInterceptors: []grpc.UnaryServerInterceptor{
+        authInterceptor,
+        rateLimitInterceptor,
+    },
+    GRPCStreamInterceptors: []grpc.StreamServerInterceptor{
+        streamAuthInterceptor,
+    },
 }
 ```
 
@@ -803,6 +846,23 @@ func simpleLogging() {
     logger.Info("service started")
 }
 ```
+
+#### Correlating logs with traces
+
+When the context carries an OpenTelemetry span, `log.FromContext(ctx)` adds `trace_id` and `span_id` to the logger, so you can jump from a log line to its trace (and back). This works for HTTP requests (via the built-in `otelgin` middleware) and gRPC calls, and for any span you start yourself:
+
+```go
+func handler(c *gin.Context) {
+    ctx := c.Request.Context()
+    log.FromContext(ctx).Info("start")           // trace_id=T span_id=A
+
+    ctx, span := tracer.Start(ctx, "load-profile")
+    defer span.End()
+    log.FromContext(ctx).Info("loading profile") // trace_id=T span_id=B (the child span)
+}
+```
+
+The ids are read when you call `FromContext`, so call it again after starting a child span. A logger created earlier, or one obtained from `slog.Default()` directly, will not pick up the new span. Without a span in the context, `FromContext` returns the logger unchanged. The attribute names are available as `log.TraceIDKey` and `log.SpanIDKey`.
 
 ## Dependency Injection with Google Wire
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"butterfly.orx.me/core/mod"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func Init(cfg mod.LogConfig) {
@@ -48,16 +49,36 @@ func parseLevel(s string) slog.Level {
 
 type loggerContextKey struct{}
 
+// Attribute keys added by FromContext when the context carries a valid span.
+const (
+	TraceIDKey = "trace_id"
+	SpanIDKey  = "span_id"
+)
+
+// FromContext returns the logger attached with WithLogger, or slog.Default().
+//
+// If ctx carries a valid OpenTelemetry span, the returned logger also has
+// trace_id and span_id attributes, so log lines can be joined with traces. The
+// ids are read when FromContext is called, so call it again after starting a
+// child span to log with the child's span_id. Without a span, the logger is
+// returned unchanged.
 func FromContext(ctx context.Context) *slog.Logger {
 	if ctx == nil {
 		return slog.Default()
 	}
+	logger := slog.Default()
 	if v := ctx.Value(loggerContextKey{}); v != nil {
 		if l, ok := v.(*slog.Logger); ok && l != nil {
-			return l
+			logger = l
 		}
 	}
-	return slog.Default()
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		return logger.With(
+			TraceIDKey, sc.TraceID().String(),
+			SpanIDKey, sc.SpanID().String(),
+		)
+	}
+	return logger
 }
 
 func WithLogger(ctx context.Context, logger *slog.Logger) context.Context {
