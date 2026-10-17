@@ -259,6 +259,11 @@ func (a *App) shutdownCore(ctx context.Context) {
 }
 
 func (a *App) InitAppConfig() error {
+	// The application config is optional: services with nothing of their own
+	// to configure can leave Config unset.
+	if a.config.Config == nil {
+		return nil
+	}
 	ctx := context.Background()
 	logger := log.CoreLogger("app.init.config")
 	b, err := config.GetConfig().Get(ctx, a.config.ConfigKey())
