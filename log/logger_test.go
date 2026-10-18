@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"butterfly.orx.me/core/mod"
@@ -203,4 +205,38 @@ func TestFromContextAddsTraceIDs(t *testing.T) {
 			t.Fatal("child must have a different span_id")
 		}
 	})
+}
+
+func TestInitRedactsSecrets(t *testing.T) {
+	var buf bytes.Buffer
+	opts := &slog.HandlerOptions{ReplaceAttr: redactAttr}
+	logger := slog.New(slog.NewJSONHandler(&buf, opts))
+
+	logger.Info("connect to postgres://app:hunter2@db:5432/app",
+		"password", "hunter2",
+		"empty_password", "",
+		"dsn", "root:hunter2@tcp(db:3306)/app",
+		"uri", "mongodb://u:hunter2@h/db",
+		"error", errors.New("open postgres://u:hunter2@h/db failed"),
+		"addr", "db:5432",
+		slog.Group("db", slog.String("api_key", "hunter2"), slog.String("name", "app")),
+	)
+
+	out := buf.String()
+	if strings.Contains(out, "hunter2") {
+		t.Fatalf("secret leaked into log output: %s", out)
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec["addr"] != "db:5432" {
+		t.Fatalf("non-secret attribute altered: %v", rec["addr"])
+	}
+	if rec["empty_password"] != "" {
+		t.Fatalf("empty secret should stay empty: %v", rec["empty_password"])
+	}
+	if got := rec["db"].(map[string]any)["name"]; got != "app" {
+		t.Fatalf("group attribute altered: %v", got)
+	}
 }

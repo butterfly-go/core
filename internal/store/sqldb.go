@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
+	"net/url"
+	"strconv"
 
 	"github.com/XSAM/otelsql"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -12,6 +15,7 @@ import (
 
 	"butterfly.orx.me/core/internal/config"
 	"butterfly.orx.me/core/internal/log"
+	"butterfly.orx.me/core/internal/redact"
 	"butterfly.orx.me/core/mod"
 )
 
@@ -21,9 +25,8 @@ var (
 
 func InitSQLDB() error {
 	cfg := config.CoreConfig().Store.DB
-	for k, v := range cfg {
-		err := setupSQLDB(k, v)
-		if err != nil {
+	for _, k := range sortedKeys(cfg) {
+		if err := setupSQLDB(k, cfg[k]); err != nil {
 			return err
 		}
 	}
@@ -37,6 +40,9 @@ func GetSQLDB(k string) *sql.DB {
 func setupSQLDB(k string, v mod.DBConfig) error {
 	logger := log.CoreLogger("store.sqldb")
 	driver, dsn := buildDriverDSN(v)
+	// The DSN carries the password. It is never logged; errors from the
+	// driver are scrubbed because they sometimes quote it.
+	secrets := []string{v.Password, dsn}
 	db, err := otelsql.Open(driver, dsn,
 		otelsql.WithAttributes(
 			dbSystemName(driver),
@@ -44,8 +50,9 @@ func setupSQLDB(k string, v mod.DBConfig) error {
 		),
 	)
 	if err != nil {
+		err = redact.Error(err, secrets...)
 		logger.Error("open sql db failed", "name", k, "driver", driver, "host", v.Host, "port", v.Port, "database", v.DBName, "error", err.Error())
-		return err
+		return fmt.Errorf("open sql db %q: %w", k, err)
 	}
 
 	if _, err := otelsql.RegisterDBStatsMetrics(db); err != nil {
@@ -59,7 +66,7 @@ func setupSQLDB(k string, v mod.DBConfig) error {
 	// Ping is best-effort: sql.Open never connects eagerly, so an unreachable
 	// database must not prevent the service from starting.
 	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("ping sql db failed", "name", k, "driver", driver, "host", v.Host, "port", v.Port, "database", v.DBName, "error", err.Error())
+		logger.Warn("ping sql db failed", "name", k, "driver", driver, "host", v.Host, "port", v.Port, "database", v.DBName, "error", redact.Error(err, secrets...).Error())
 	}
 
 	logger.Info("initialize sql db", "name", k, "driver", driver, "host", v.Host, "port", v.Port, "database", v.DBName)
@@ -98,6 +105,14 @@ func pgConfigToDSN(v mod.DBConfig) string {
 	if sslMode == "" {
 		sslMode = "disable"
 	}
-	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		v.User, v.Password, v.Host, v.Port, v.DBName, sslMode)
+	// url.URL escapes the user and password, so a password containing '@',
+	// '/' or '#' does not corrupt the DSN.
+	u := url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(v.User, v.Password),
+		Host:     net.JoinHostPort(v.Host, strconv.Itoa(v.Port)),
+		Path:     "/" + v.DBName,
+		RawQuery: url.Values{"sslmode": {sslMode}}.Encode(),
+	}
+	return u.String()
 }

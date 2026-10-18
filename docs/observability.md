@@ -159,6 +159,31 @@ export BUTTERFLY_TRACING_ENDPOINT=localhost:4317
 export BUTTERFLY_TRACING_DISABLE=true
 ```
 
+### TLS and headers
+
+A gRPC exporter sends plaintext unless told otherwise, and an HTTP exporter uses HTTPS. Change either with `BUTTERFLY_TRACING_INSECURE`, or configure TLS in detail, and add headers such as a hosted collector's API key:
+
+```bash
+# Hosted collector: TLS with the system CAs, plus an API key
+export BUTTERFLY_TRACING_PROVIDER=grpc
+export BUTTERFLY_TRACING_ENDPOINT=otlp.example.com:4317
+export BUTTERFLY_TRACING_INSECURE=false
+export BUTTERFLY_TRACING_HEADERS="x-api-key=abc123"
+
+# Private CA, with a client certificate (mutual TLS)
+export BUTTERFLY_TRACING_TLS_ENABLED=true
+export BUTTERFLY_TRACING_TLS_CA_FILE=/etc/otel/ca.pem
+export BUTTERFLY_TRACING_TLS_CERT_FILE=/etc/otel/client.pem
+export BUTTERFLY_TRACING_TLS_KEY_FILE=/etc/otel/client-key.pem
+
+# Plaintext OTLP/HTTP to a local collector
+export BUTTERFLY_TRACING_PROVIDER=http
+export BUTTERFLY_TRACING_ENDPOINT=localhost:4318
+export BUTTERFLY_TRACING_INSECURE=true
+```
+
+See the [variable reference](configuration.md#environment-variables). Header values are never logged, only their names. Invalid settings, such as TLS enabled together with `BUTTERFLY_TRACING_INSECURE=true`, fail startup.
+
 Sampling is controlled by `otel.trace_sample_ratio` in the config file. See [Configuration](configuration.md#otel). HTTP requests, gRPC calls, Redis, SQL, GORM and Mongo are traced without any code on your side. Trace context is propagated in the W3C `traceparent` header.
 
 ## Logging
@@ -175,6 +200,10 @@ log:
   format: "json"       # json or text (default: text)
   add_source: false    # include source file/line in log entries
 ```
+
+### Secrets in logs
+
+Passwords, tokens and DSNs are not logged by the framework, and the global logger masks credential-looking attributes and URI passwords as a safety net. See [Logging and secrets](configuration.md#logging-and-secrets).
 
 ### Logger in the context
 

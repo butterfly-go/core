@@ -2,11 +2,16 @@ package config
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"butterfly.orx.me/core/internal/tlstest"
 	capi "github.com/hashicorp/consul/api"
 )
 
@@ -92,4 +97,176 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return fn(r)
+}
+
+func TestNewConsulConfig_SendsToken(t *testing.T) {
+	kv := newFakeKV("a: 1")
+	srv := httptest.NewServer(kv)
+	defer srv.Close()
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_ADDRESS", srv.Listener.Addr().String())
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TOKEN", "s3cr3t-token")
+
+	c, err := NewConsulConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Get(context.Background(), "svc"); err != nil {
+		t.Fatal(err)
+	}
+	if kv.token != "s3cr3t-token" {
+		t.Fatalf("X-Consul-Token = %q", kv.token)
+	}
+}
+
+func TestNewConsulConfig_ReadsTokenFile(t *testing.T) {
+	kv := newFakeKV("a: 1")
+	srv := httptest.NewServer(kv)
+	defer srv.Close()
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("file-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_ADDRESS", srv.Listener.Addr().String())
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TOKEN_FILE", tokenFile)
+
+	c, err := NewConsulConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Get(context.Background(), "svc"); err != nil {
+		t.Fatal(err)
+	}
+	if kv.token != "file-token" {
+		t.Fatalf("X-Consul-Token = %q", kv.token)
+	}
+}
+
+func newTLSConsulServer(t *testing.T, b tlstest.Bundle, requireClientCert bool) (*fakeKV, string) {
+	t.Helper()
+	kv := newFakeKV("a: 1")
+	srv := httptest.NewUnstartedServer(kv)
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{b.ServerCert}}
+	if requireClientCert {
+		srv.TLS.ClientAuth = tls.RequireAndVerifyClientCert
+		srv.TLS.ClientCAs = b.CAPool
+	}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return kv, srv.Listener.Addr().String()
+}
+
+func TestNewConsulConfig_TLS(t *testing.T) {
+	b := tlstest.New(t)
+	_, addr := newTLSConsulServer(t, b, false)
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_ADDRESS", addr)
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TLS_ENABLED", "true")
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TLS_CA_FILE", b.CAFile)
+
+	c, err := NewConsulConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := c.Get(context.Background(), "svc")
+	if err != nil {
+		t.Fatalf("Get over TLS: %v", err)
+	}
+	if string(data) != "a: 1" {
+		t.Fatalf("data = %q", data)
+	}
+}
+
+func TestNewConsulConfig_TLSRejectsUntrustedServer(t *testing.T) {
+	b := tlstest.New(t)
+	_, addr := newTLSConsulServer(t, b, false)
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_ADDRESS", addr)
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TLS_ENABLED", "true") // no CA: the test CA is not trusted
+
+	c, err := NewConsulConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Get(context.Background(), "svc"); err == nil {
+		t.Fatal("expected a certificate verification error")
+	}
+}
+
+func TestNewConsulConfig_TLSSkipVerifyAndServerName(t *testing.T) {
+	b := tlstest.New(t)
+	_, addr := newTLSConsulServer(t, b, false)
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_ADDRESS", addr)
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TLS_ENABLED", "true")
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TLS_INSECURE_SKIP_VERIFY", "true")
+	c, err := NewConsulConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Get(context.Background(), "svc"); err != nil {
+		t.Fatalf("skip-verify Get: %v", err)
+	}
+
+	// A wrong server name must fail verification against the trusted CA.
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TLS_INSECURE_SKIP_VERIFY", "")
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TLS_CA_FILE", b.CAFile)
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TLS_SERVER_NAME", "other.example.com")
+	c, err = NewConsulConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Get(context.Background(), "svc"); err == nil {
+		t.Fatal("expected a server name mismatch")
+	}
+}
+
+func TestNewConsulConfig_MutualTLS(t *testing.T) {
+	b := tlstest.New(t)
+	_, addr := newTLSConsulServer(t, b, true)
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_ADDRESS", addr)
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TLS_ENABLED", "true")
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TLS_CA_FILE", b.CAFile)
+
+	c, err := NewConsulConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Get(context.Background(), "svc"); err == nil {
+		t.Fatal("expected the server to reject a client without a certificate")
+	}
+
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TLS_CERT_FILE", b.ClientCertFile)
+	t.Setenv("BUTTERFLY_CONFIG_CONSUL_TLS_KEY_FILE", b.ClientKeyFile)
+	c, err = NewConsulConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Get(context.Background(), "svc"); err != nil {
+		t.Fatalf("Get with a client certificate: %v", err)
+	}
+}
+
+func TestNewConsulConfig_TLSMisconfiguration(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"ca file without enabled",
+			map[string]string{"BUTTERFLY_CONFIG_CONSUL_TLS_CA_FILE": "/ca.pem"}, "tls.enabled is false"},
+		{"cert without key",
+			map[string]string{"BUTTERFLY_CONFIG_CONSUL_TLS_ENABLED": "true", "BUTTERFLY_CONFIG_CONSUL_TLS_CERT_FILE": "/c.pem"}, "must be set together"},
+		{"http address with tls",
+			map[string]string{"BUTTERFLY_CONFIG_CONSUL_TLS_ENABLED": "true", "BUTTERFLY_CONFIG_CONSUL_ADDRESS": "http://consul:8500"}, "http://"},
+		{"missing ca file",
+			map[string]string{"BUTTERFLY_CONFIG_CONSUL_TLS_ENABLED": "true", "BUTTERFLY_CONFIG_CONSUL_TLS_CA_FILE": "/no/such/ca.pem"}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			_, err := NewConsulConfig()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want substring %q", err, tt.want)
+			}
+		})
+	}
 }

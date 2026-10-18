@@ -25,7 +25,6 @@ import (
 	"butterfly.orx.me/core/internal/store"
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
-	"gopkg.in/yaml.v3"
 )
 
 // DefaultShutdownTimeout is the total time budget for graceful shutdown when
@@ -44,12 +43,31 @@ const (
 // dependency is healthy and should honor ctx, which carries a timeout.
 type HealthCheck = health.Check
 
+// AppConfig is the type of Config.Config and of the value passed to
+// OnConfigChange: any pointer to a struct with a Print method.
+type AppConfig = config.AppConfig
+
 type Config struct {
-	Service      string
-	Namespace    string
-	Config       config.AppConfig
-	Router       func(*gin.Engine)
-	GRPCRegister func(*grpc.Server)
+	Service   string
+	Namespace string
+	Config    config.AppConfig
+	// OnConfigChange is called with a freshly parsed Config whenever the
+	// configuration document changes. It needs Config to be set, and only
+	// works with the Consul backend (with the file backend a warning is logged
+	// at startup and the config is not watched).
+	//
+	// The value is a new pointer of the same type as Config, decoded from the
+	// new document alone (fields start at their zero value, not at what Config
+	// held) and checked with Validate when the type has one. Config itself is
+	// never modified after startup, so it can be read without locking; use the
+	// callback to swap in the new value, for example with atomic.Pointer.
+	// A document that does not parse or validate is rejected, logged, and
+	// OnConfigChange is not called. Core settings (store, server, otel) are
+	// read at startup only; a change to them logs a warning. The callback runs
+	// on one goroutine at a time and a panic in it is recovered.
+	OnConfigChange func(newConfig AppConfig)
+	Router         func(*gin.Engine)
+	GRPCRegister   func(*grpc.Server)
 	// GRPCUnaryInterceptors and GRPCStreamInterceptors are your own gRPC
 	// interceptors. They run in order, inside the built-in ones (tracing,
 	// logging with trace ids, panic recovery), so they can use
@@ -96,6 +114,10 @@ type App struct {
 	// shutdownDelay is the pause between going not-ready and stopping servers.
 	shutdownDelay time.Duration
 	health        *health.Registry
+	// configDoc is the document the app config was loaded from, the baseline
+	// for the config watch.
+	configDoc []byte
+	watch     *configWatch
 }
 
 func New(cfg *Config) *App {
@@ -159,7 +181,16 @@ func (a *App) RunContext(ctx context.Context) error {
 		return err
 	}
 
+	a.watch = a.startConfigWatch(ctx, config.GetConfig(), a.configDoc)
+	defer a.stopConfigWatch(context.Background())
+
 	return a.serve(ctx)
+}
+
+func (a *App) stopConfigWatch(ctx context.Context) {
+	if a.watch != nil {
+		a.watch.Stop(ctx)
+	}
 }
 
 // serve starts the servers, waits for ctx to be done (or a server to fail) and
@@ -213,6 +244,8 @@ func (a *App) newShutdownContext() (context.Context, context.CancelFunc) {
 
 // shutdown runs user teardown functions and then releases core resources.
 func (a *App) shutdown(ctx context.Context) {
+	// No config reload may run while resources are being released.
+	a.stopConfigWatch(ctx)
 	a.runTeardown()
 	a.shutdownCore(ctx)
 }
@@ -262,7 +295,10 @@ func (a *App) InitAppConfig() error {
 	// The application config is optional: services with nothing of their own
 	// to configure can leave Config unset.
 	if a.config.Config == nil {
-		return nil
+		return a.checkReloadConfig()
+	}
+	if err := a.checkReloadConfig(); err != nil {
+		return err
 	}
 	ctx := context.Background()
 	logger := log.CoreLogger("app.init.config")
@@ -273,11 +309,12 @@ func (a *App) InitAppConfig() error {
 			"error", err.Error())
 		return err
 	}
-	err = yaml.Unmarshal(b, a.config.Config)
-	if err != nil {
-		logger.Error("unmarshal failed", "error", err.Error())
+	a.configDoc = b
+	if err := parseAppConfig(b, a.config.Config); err != nil {
+		logger.Error("load app config failed", "key", a.config.ConfigKey(), "error", err.Error())
+		return err
 	}
-	return err
+	return nil
 }
 
 // initServer resolves and validates the listen addresses from the core config.
