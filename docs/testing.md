@@ -112,3 +112,14 @@ func TestWithDefaultLogger(t *testing.T) {
     }
 }
 ```
+
+## Testing against real databases
+
+The framework's own tests start real Redis, PostgreSQL, MySQL and MongoDB servers with [testcontainers](https://golang.testcontainers.org/) to check the health checks and connection options against the real thing (`internal/store/containers_test.go`). You can do the same for your service. They need a running Docker daemon: without one they are skipped, and `go test -short` skips them too.
+
+```bash
+go test ./...            # container tests run when Docker is available
+go test -short ./...     # skip them
+```
+
+The first run pulls the images (`redis:7-alpine`, `postgres:16-alpine`, `mysql:8.4`, `mongo:7`), which can take a few minutes.

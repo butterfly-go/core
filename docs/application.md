@@ -8,7 +8,8 @@ An application is an `app.Config` handed to `app.New(...).Run()`.
 |---|---|
 | `Service` | Service name. Used for the config key, tracing and the HTTP middleware. |
 | `Namespace` | Optional prefix of the Consul key (`Namespace/Service`). See [Configuration](configuration.md). |
-| `Config` | Optional pointer to your own settings struct. See [Configuration](configuration.md#your-application-config). |
+| `Config` | Optional pointer to your own settings struct. May have a `Validate() error` method, see [Validation](configuration.md#validation). See [Configuration](configuration.md#your-application-config). |
+| `OnConfigChange` | `func(app.AppConfig)`. Called with a freshly parsed and validated `Config` when the Consul document changes. See [Reloading configuration](configuration.md#reloading-configuration). |
 | `Router` | `func(*gin.Engine)`. Registers HTTP routes and middleware. See [HTTP](http.md). |
 | `GRPCRegister` | `func(*grpc.Server)`. Registers gRPC services. Setting it starts the gRPC server. See [gRPC](grpc.md). |
 | `GRPCUnaryInterceptors`, `GRPCStreamInterceptors` | Your own gRPC interceptors. |
@@ -92,8 +93,8 @@ func flushMetrics() error { return nil }
 `Run` does this, in order. A failure at any step stops startup (`Run` panics with the error, `RunContext` returns it).
 
 1. Choose the configuration backend (file or Consul).
-2. Load your application config into `Config`.
-3. Load the core configuration.
+2. Load your application config into `Config` and run its `Validate`, if it has one.
+3. Load the core configuration and validate it.
 4. Configure logging (`log.level`, `log.format`, `log.add_source`).
 5. Resolve and validate the listen addresses (`server.*`).
 6. Set up metrics.
@@ -102,7 +103,8 @@ func flushMetrics() error { return nil }
 9. Connect the stores: Redis, SQL, GORM, Mongo, S3.
 10. Register the health checks.
 11. Run your `InitFunc`s, in order.
-12. Start the HTTP server and, if `GRPCRegister` is set, the gRPC server. `/readyz` now reports `ready`.
+12. Start watching the config document, when `OnConfigChange` is set.
+13. Start the HTTP server and, if `GRPCRegister` is set, the gRPC server. `/readyz` now reports `ready`.
 
 Because the stores are connected before your `InitFunc`s run, you can call `redis.GetClient(...)`, `sqldb.GetDB(...)` and the like from them.
 

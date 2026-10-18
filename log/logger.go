@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"butterfly.orx.me/core/internal/redact"
 	"butterfly.orx.me/core/mod"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -17,8 +18,9 @@ func Init(cfg mod.LogConfig) {
 		addSource = *cfg.AddSource
 	}
 	opts := &slog.HandlerOptions{
-		Level:     level,
-		AddSource: addSource,
+		Level:       level,
+		AddSource:   addSource,
+		ReplaceAttr: redactAttr,
 	}
 
 	var handler slog.Handler
@@ -30,6 +32,37 @@ func Init(cfg mod.LogConfig) {
 	}
 
 	slog.SetDefault(slog.New(handler))
+}
+
+// redactAttr is a safety net for every log line the global logger writes:
+// values under credential-like keys ("password", "token", "dsn", ...) are
+// masked, and the password of any URI or DSN inside a string or error value is
+// scrubbed. Call sites still avoid logging secrets in the first place.
+func redactAttr(groups []string, a slog.Attr) slog.Attr {
+	if len(groups) == 0 && a.Key == slog.SourceKey {
+		return a
+	}
+	v := a.Value.Resolve()
+	if v.Kind() == slog.KindGroup {
+		return a
+	}
+	if redact.IsSensitiveKey(a.Key) {
+		if v.Kind() == slog.KindString && v.String() == "" {
+			return a
+		}
+		return slog.String(a.Key, redact.Mask)
+	}
+	switch v.Kind() {
+	case slog.KindString:
+		if s := v.String(); s != "" {
+			a.Value = slog.StringValue(redact.String(s))
+		}
+	case slog.KindAny:
+		if err, ok := v.Any().(error); ok && err != nil {
+			a.Value = slog.StringValue(redact.String(err.Error()))
+		}
+	}
+	return a
 }
 
 func parseLevel(s string) slog.Level {

@@ -4,7 +4,7 @@ Every store entry in the `store` section of the [configuration](configuration.md
 
 | Store | Config key | Getter | Returns |
 |---|---|---|---|
-| Redis | `store.redis.<name>` | `redis.GetClient(name)` | `*redis.Client` ([go-redis v9](https://github.com/redis/go-redis)) |
+| Redis | `store.redis.<name>` | `redis.GetClient(name)`, `redis.GetUniversalClient(name)`, `redis.GetClusterClient(name)` | `*redis.Client`, `redis.UniversalClient` or `*redis.ClusterClient` ([go-redis v9](https://github.com/redis/go-redis)) |
 | SQL | `store.db.<name>` | `sqldb.GetDB(name)` | `*sql.DB` |
 | GORM | `store.db.<name>` (MySQL only) | `gorm.GetDB(name)` | `*gorm.DB` |
 | MongoDB | `store.mongo.<name>` | `mongo.GetClient(name)` | `*mongo.Client` ([driver v2](https://pkg.go.dev/go.mongodb.org/mongo-driver/v2)) |
@@ -59,6 +59,27 @@ func setUserCache(ctx context.Context, user *User) error {
 ```
 
 `redis.Nil` is not exported by the framework. Import go-redis for it, as above.
+
+### Redis modes, TLS and pools
+
+An entry runs in standalone, sentinel or cluster mode, see [`store.redis`](configuration.md#storeredis) for the configuration. The getter to use depends on the mode:
+
+| Mode | `GetClient` | `GetClusterClient` | `GetUniversalClient` |
+|---|---|---|---|
+| standalone | `*redis.Client` | `nil` | yes |
+| sentinel | `*redis.Client` (follows the master) | `nil` | yes |
+| cluster | `nil` | `*redis.ClusterClient` | yes |
+
+`GetUniversalClient` returns the `redis.UniversalClient` interface for any mode, so code that must run against all of them does not need to know:
+
+```go
+rdb := redis.GetUniversalClient("cache")
+err := rdb.Set(ctx, "k", "v", time.Minute).Err()
+```
+
+Keys in a cluster must hash to the slots of the node that serves them, so multi-key commands and transactions are limited to keys in one slot (use hash tags such as `{user:1}:profile`). That is a Redis cluster rule, not a framework one.
+
+Pool size, idle connections and timeouts are set per entry with `pool_size`, `min_idle_conns`, `pool_timeout`, `conn_max_idle_time`, `conn_max_lifetime`, `dial_timeout`, `read_timeout` and `write_timeout`. Leave them out for the go-redis defaults.
 
 ## SQL
 
@@ -144,6 +165,21 @@ func findUser(ctx context.Context, id string) (*User, error) {
     return &user, nil
 }
 ```
+
+Pool sizes and timeouts can be set next to the URI, see [`store.mongo`](configuration.md#storemongo):
+
+```yaml
+store:
+  mongo:
+    primary:
+      uri: "mongodb://app:secret@mongo-1,mongo-2/?replicaSet=rs0&tls=true"
+      max_pool_size: 100
+      min_pool_size: 5
+      server_selection_timeout: 5s
+      timeout: 30s
+```
+
+`timeout` is the default deadline of one operation (the driver's `timeoutMS`). A deadline on your context still applies, and the shorter one wins.
 
 The framework's `mongo` package only provides `GetClient`. Types such as `*mongo.Collection` come from `go.mongodb.org/mongo-driver/v2/mongo`.
 
